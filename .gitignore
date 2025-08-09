@@ -308,6 +308,14 @@ runs/
 !demo_inputs.txt
 !example_*.txt
 
+# Keep results directory and images
+!results/
+!results/*.png
+!results/*.jpg
+!results/*.jpeg
+!results/*.gif
+!results/*.svg
+
 # Hugging Face and model caches
 .cache/
 transformers_cache/
