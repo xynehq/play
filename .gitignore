@@ -328,6 +328,9 @@ training.log
 eval.log
 *.log
 
+# TensorBoard PID file
+.tensorboard.pid
+
 # GPU profiling
 *.prof
 *.nvprof

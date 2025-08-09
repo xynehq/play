@@ -402,3 +402,11 @@ Built on top of:
 * [PEFT](https://github.com/huggingface/peft)
 * [bitsandbytes](https://github.com/TimDettmers/bitsandbytes)
 * [Unsloth](https://github.com/unslothai/unsloth)
+
+## 📊 What Users Get:
+
+- __Live Loss Curves__: Real-time training/validation loss
+- __Learning Rate Tracking__: Monitor LR schedules
+- __ROUGE Metrics__: Evaluation metrics visualization
+- __GPU Utilization__: System resource monitoring
+- __Easy Access__: Simple URL ([](http://localhost:6006)<http://localhost:6006>)

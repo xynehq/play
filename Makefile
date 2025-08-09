@@ -1,4 +1,4 @@
-.PHONY: help install process style render train eval infer merge clean setup-dirs
+.PHONY: help install process style render train train-with-tb stop-tb tensorboard eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge clean setup-dirs
 
 # Default config file
 CONFIG ?= configs/config_run.yaml
@@ -20,8 +20,19 @@ help:
 	@echo ""
 	@echo "Training & Evaluation:"
 	@echo "  train         Start training with current config"
-	@echo "  eval          Evaluate trained model"
-	@echo "  infer         Run inference on demo inputs"
+	@echo "  train-with-tb Start training with TensorBoard monitoring"
+	@echo "  eval          Evaluate trained model (validation set)"
+	@echo "  eval-test     Evaluate on test set"
+	@echo "  eval-val      Evaluate on validation set"
+	@echo "  eval-quick    Quick evaluation (200 samples)"
+	@echo "  eval-full     Full evaluation (no sample limit)"
+	@echo "  infer         Interactive inference (chat mode)"
+	@echo "  infer-batch   Batch inference from file"
+	@echo "  infer-interactive Interactive inference (explicit)"
+	@echo ""
+	@echo "Monitoring:"
+	@echo "  tensorboard   Start TensorBoard (manual)"
+	@echo "  stop-tb       Stop background TensorBoard"
 	@echo ""
 	@echo "Model Management:"
 	@echo "  merge         Merge LoRA adapters to single model"
@@ -105,19 +116,71 @@ train:
 	@echo "Starting training..."
 	python scripts/train.py --config $(CONFIG)
 
+train-with-tb:
+	@echo "Starting training with TensorBoard..."
+	@echo "TensorBoard will be available at http://localhost:6006"
+	@echo "Starting TensorBoard in background..."
+	@nohup tensorboard --logdir outputs/ --port 6006 > /dev/null 2>&1 & echo $$! > .tensorboard.pid
+	@echo "Starting training..."
+	python scripts/train.py --config $(CONFIG)
+	@echo "Training completed. TensorBoard is still running."
+	@echo "To stop TensorBoard: make stop-tb"
+
+stop-tb:
+	@if [ -f .tensorboard.pid ]; then \
+		echo "Stopping TensorBoard..."; \
+		kill `cat .tensorboard.pid` 2>/dev/null || true; \
+		rm -f .tensorboard.pid; \
+		echo "TensorBoard stopped."; \
+	else \
+		echo "TensorBoard PID file not found."; \
+	fi
+
+tensorboard:
+	@echo "Starting TensorBoard..."
+	@echo "TensorBoard will be available at http://localhost:6006"
+	tensorboard --logdir outputs/ --port 6006
+
 eval:
-	@echo "Running evaluation..."
-	python scripts/eval.py --config $(CONFIG)
+	@echo "Running evaluation on validation set..."
+	python scripts/eval.py --config $(CONFIG) --split val
+
+eval-test:
+	@echo "Running evaluation on test set..."
+	python scripts/eval.py --config $(CONFIG) --split test
+
+eval-val:
+	@echo "Running evaluation on validation set..."
+	python scripts/eval.py --config $(CONFIG) --split val
+
+eval-quick:
+	@echo "Running quick evaluation (200 samples)..."
+	python scripts/eval.py --config $(CONFIG) --split val --limit 200
+
+eval-full:
+	@echo "Running full evaluation (no limit)..."
+	python scripts/eval.py --config $(CONFIG) --split val --limit 0
 
 infer:
-	@echo "Running inference..."
+	@echo "Starting interactive inference..."
+	@echo "Type your questions. Press Ctrl+C to exit."
+	python scripts/infer.py --config $(CONFIG) --mode interactive
+
+infer-batch:
+	@echo "Running batch inference..."
 	@if [ ! -f demo_inputs.txt ]; then \
 		echo "Creating demo_inputs.txt..."; \
 		echo "What is machine learning?" > demo_inputs.txt; \
 		echo "Explain neural networks briefly." >> demo_inputs.txt; \
+		echo "What is QLoRA?" >> demo_inputs.txt; \
 	fi
-	python scripts/infer.py --config $(CONFIG) --input demo_inputs.txt --out outputs/preds.txt
+	python scripts/infer.py --config $(CONFIG) --mode batch --input_file demo_inputs.txt --output_file outputs/preds.txt
 	@echo "Results saved to outputs/preds.txt"
+
+infer-interactive:
+	@echo "Starting interactive inference..."
+	@echo "Type your questions. Press Ctrl+C to exit."
+	python scripts/infer.py --config $(CONFIG) --mode interactive
 
 merge:
 	@echo "Merging LoRA adapters..."

@@ -17,9 +17,17 @@ make process        # Processes raw data to structured chat format
 make style          # Applies style prompts to all data splits
 make render         # Renders chat templates to seq2seq format
 make train          # Starts training with current config
+make train-with-tb  # Starts training with TensorBoard monitoring
 make eval           # Runs evaluation on trained model
-make infer          # Runs inference with demo inputs
+make eval-test      # Evaluates on test set
+make eval-quick     # Quick evaluation (200 samples)
+make eval-full      # Full evaluation (no limit)
+make infer          # Interactive inference (chat mode)
+make infer-batch    # Batch inference from file
+make infer-interactive # Interactive inference (explicit)
 make merge          # Merges LoRA adapters to single model
+make tensorboard    # Starts TensorBoard manually
+make stop-tb        # Stops background TensorBoard
 make clean          # Cleans all generated files
 make full-pipeline  # Runs complete data processing (process + style + render)
 ```
