@@ -1,0 +1,17 @@
+torch>=2.2
+transformers>=4.42
+datasets
+accelerate
+peft
+bitsandbytes
+jinja2
+evaluate
+rouge-score
+sacrebleu
+tensorboard
+pyyaml
+tqdm
+scipy
+numpy
+pandas
+scikit-learn

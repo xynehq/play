@@ -1,0 +1,137 @@
+[project]
+name = "sft-play"
+version = "0.1.0"
+description = "A plug-and-play Supervised Fine-Tuning template for small GPUs"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "SFT-Play Contributors"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "torch>=2.2",
+    "transformers>=4.42",
+    "datasets",
+    "accelerate",
+    "peft",
+    "bitsandbytes",
+    "jinja2",
+    "evaluate",
+    "rouge-score",
+    "sacrebleu",
+    "tensorboard",
+    "pyyaml",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+]
+unsloth = [
+    "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git",
+]
+wandb = [
+    "wandb",
+]
+trackio = [
+    "trackio",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-username/sft-play"
+Repository = "https://github.com/your-username/sft-play"
+Documentation = "https://github.com/your-username/sft-play#readme"
+"Bug Tracker" = "https://github.com/your-username/sft-play/issues"
+
+[project.scripts]
+sft-process = "scripts.process_data:main"
+sft-train = "scripts.train:main"
+sft-eval = "scripts.eval:main"
+sft-infer = "scripts.infer:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scripts", "configs", "chat_templates"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "transformers.*",
+    "datasets.*",
+    "accelerate.*",
+    "peft.*",
+    "bitsandbytes.*",
+    "evaluate.*",
+    "rouge_score.*",
+    "sacrebleu.*",
+]
+ignore_missing_imports = true
