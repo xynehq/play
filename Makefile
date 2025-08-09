@@ -1,4 +1,4 @@
-.PHONY: help install process style render train train-with-tb stop-tb tensorboard eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge clean setup-dirs
+.PHONY: help install process style render train train-with-tb stop-tb tensorboard eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs
 
 # Default config file
 CONFIG ?= configs/config_run.yaml
@@ -35,9 +35,12 @@ help:
 	@echo "  stop-tb       Stop background TensorBoard"
 	@echo ""
 	@echo "Model Management:"
-	@echo "  merge         Merge LoRA adapters to single model"
+	@echo "  merge         Merge LoRA adapters to FP16 model"
+	@echo "  merge-bf16    Merge LoRA adapters to BF16 model"
+	@echo "  merge-test    Test merged model loading"
 	@echo ""
 	@echo "Utilities:"
+	@echo "  check         Validate project setup before training"
 	@echo "  clean         Clean generated files"
 	@echo "  full-pipeline Run complete data processing pipeline"
 	@echo ""
@@ -184,7 +187,89 @@ infer-interactive:
 
 merge:
 	@echo "Merging LoRA adapters..."
-	python scripts/merge_lora.py --config $(CONFIG) --out outputs/merged_fp16
+	python scripts/merge_lora.py --config $(CONFIG) --adapters adapters/last --out outputs/merged_fp16 --dtype fp16
+
+merge-bf16:
+	@echo "Merging LoRA adapters (bfloat16)..."
+	python scripts/merge_lora.py --config $(CONFIG) --adapters adapters/last --out outputs/merged_bf16 --dtype bf16
+
+merge-test:
+	@echo "Testing merged model..."
+	@if [ ! -d outputs/merged_fp16 ]; then \
+		echo "Error: Merged model not found. Run 'make merge' first."; \
+		exit 1; \
+	fi
+	@echo "Testing merged model loading..."
+	@python -c "from transformers import AutoModelForCausalLM, AutoTokenizer; \
+		print('Loading merged model...'); \
+		m = AutoModelForCausalLM.from_pretrained('outputs/merged_fp16', torch_dtype='auto', device_map='auto'); \
+		t = AutoTokenizer.from_pretrained('outputs/merged_fp16', use_fast=True); \
+		print('✓ Model loaded successfully!'); \
+		print(f'Model type: {m.config.model_type}'); \
+		print(f'Pad token: {t.pad_token}'); \
+		print('✓ Merged model is ready for deployment!')"
+
+check:
+	@echo "🔍 SFT-Play Sanity Check"
+	@echo "========================"
+	@echo ""
+	@echo "Checking project setup..."
+	@echo ""
+	@# Check config file exists
+	@if [ ! -f $(CONFIG) ]; then \
+		echo "❌ Config file not found: $(CONFIG)"; \
+		exit 1; \
+	else \
+		echo "✅ Config file found: $(CONFIG)"; \
+	fi
+	@echo ""
+	@# Check processed data exists
+	@if [ ! -f data/processed/train.jsonl ]; then \
+		echo "❌ Training data not found: data/processed/train.jsonl"; \
+		echo "   Run 'make process' or './workflows/quick_start.sh' first"; \
+		exit 1; \
+	else \
+		echo "✅ Training data found: data/processed/train.jsonl"; \
+		@wc -l data/processed/train.jsonl | awk '{print "   📊 Training samples: " $$1}'; \
+	fi
+	@echo ""
+	@# Check validation data
+	@if [ -f data/processed/val.jsonl ]; then \
+		echo "✅ Validation data found: data/processed/val.jsonl"; \
+		@wc -l data/processed/val.jsonl | awk '{print "   📊 Validation samples: " $$1}'; \
+	else \
+		echo "⚠️  Validation data not found: data/processed/val.jsonl"; \
+	fi
+	@echo ""
+	@# Check test data
+	@if [ -f data/processed/test.jsonl ]; then \
+		echo "✅ Test data found: data/processed/test.jsonl"; \
+		@wc -l data/processed/test.jsonl | awk '{print "   📊 Test samples: " $$1}'; \
+	else \
+		echo "⚠️  Test data not found: data/processed/test.jsonl"; \
+	fi
+	@echo ""
+	@# Check template file
+	@if [ -f chat_templates/default.jinja ]; then \
+		echo "✅ Chat template found: chat_templates/default.jinja"; \
+	else \
+		echo "❌ Chat template not found: chat_templates/default.jinja"; \
+		exit 1; \
+	fi
+	@echo ""
+	@# Check directories
+	@if [ -d outputs ] && [ -d adapters ]; then \
+		echo "✅ Output directories ready"; \
+	else \
+		echo "⚠️  Output directories missing - run 'make setup-dirs'"; \
+	fi
+	@echo ""
+	@echo "🎉 Sanity check completed!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  • Run 'make train' to start training"
+	@echo "  • Run 'make train-with-tb' for training with TensorBoard"
+	@echo "  • Run 'make help' to see all available commands"
 
 clean:
 	@echo "Cleaning generated files..."
@@ -197,5 +282,6 @@ full-pipeline: setup-dirs process style render
 	@echo "Full data processing pipeline completed!"
 	@echo "Next steps:"
 	@echo "  1. Review processed data in data/processed_with_style/"
-	@echo "  2. Run 'make train' to start training"
-	@echo "  3. Run 'make eval' to evaluate the model"
+	@echo "  2. Run 'make check' to validate setup"
+	@echo "  3. Run 'make train' to start training"
+	@echo "  4. Run 'make eval' to evaluate the model"
