@@ -374,3 +374,6 @@ yarn-error.log*
 
 # Conda
 .conda/
+
+models/*
+!models/.gitkeep

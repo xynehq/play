@@ -11,6 +11,8 @@ from transformers import (AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2S
 from transformers.trainer_utils import get_last_checkpoint
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from jinja2 import Template
+from scripts.utils.model_store import prepare_local_model_dir
+import os
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -188,7 +190,11 @@ def main():
 
     torch.manual_seed(cfg.get("seed", 42))
 
-    model_name = cfg["model"]["name"]
+    hf_token = os.getenv("HUGGINGFACE_HUB_TOKEN", None)
+    local_model_dir = prepare_local_model_dir(cfg["model"], hf_token=hf_token)
+
+    model_name = local_model_dir   # from now on, load FROM DISK
+    trust_remote_code = bool(cfg["model"].get("trust_remote_code", False))
     model_type = cfg["model"]["type"]          # "causal" | "seq2seq"
     max_len    = int(cfg["model"].get("max_seq_len", 512))
 
@@ -196,7 +202,7 @@ def main():
     bs, accum = choose_bs_and_accum(cfg["train"], max_len, model_name)
 
     # tokenizer
-    tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    tok = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=trust_remote_code)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token if tok.eos_token else "<|pad|>"
 
@@ -237,7 +243,7 @@ def main():
 
     is_seq2seq = (model_type == "seq2seq")
     if is_seq2seq:
-        base_model = AutoModelForSeq2SeqLM.from_pretrained(model_name, torch_dtype=torch.float16)
+        base_model = AutoModelForSeq2SeqLM.from_pretrained(model_name, torch_dtype=torch.float16, trust_remote_code=trust_remote_code)
     else:
         if mode == "qlora":
             if use_bnb:
@@ -252,13 +258,15 @@ def main():
                     quantization_config=bnb_config,
                     torch_dtype=torch.float16,
                     device_map="auto",
+                    trust_remote_code=trust_remote_code,
                 )
                 base_model = prepare_model_for_kbit_training(base_model)
             else:
                 # Unsloth path (simplified): unsloth handles 4-bit load internally
                 from unsloth import FastLanguageModel
                 base_model, tok = FastLanguageModel.from_pretrained(
-                    model_name, load_in_4bit=True
+                    model_name, load_in_4bit=True,
+                    trust_remote_code=trust_remote_code
                 )
         else:
             # LoRA or Full: fp16/bf16 path
@@ -266,6 +274,7 @@ def main():
                 model_name,
                 torch_dtype=torch.float16,
                 device_map="auto",
+                trust_remote_code=trust_remote_code,
             )
 
     # Apply LoRA if needed

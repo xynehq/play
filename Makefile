@@ -1,4 +1,4 @@
-.PHONY: help install process style render train train-with-tb stop-tb tensorboard eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs
+.PHONY: help install process style render train train-with-tb stop-tb tensorboard eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model
 
 # Default config file
 CONFIG ?= configs/config_run.yaml
@@ -47,6 +47,16 @@ help:
 	@echo "Variables:"
 	@echo "  CONFIG=path   Specify config file (default: configs/config_run.yaml)"
 	@echo "  STYLE=text    Specify style prompt for style command"
+
+.PHONY: download-model
+MODEL?=Qwen/Qwen2.5-3B-Instruct
+LOCAL?=models/$(shell echo $(MODEL) | sed 's/[\/:@#]\+/-/g')
+
+download-model:
+	@python -c "from huggingface_hub import snapshot_download; import os; \
+token=os.getenv('HUGGINGFACE_HUB_TOKEN', None); \
+snapshot_download(repo_id='$(MODEL)', local_dir='$(LOCAL)', local_dir_use_symlinks=False, token=token); \
+print('Saved to: $(LOCAL)')"
 
 install:
 	@echo "Installing dependencies..."

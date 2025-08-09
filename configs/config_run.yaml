@@ -1,7 +1,10 @@
 include: configs/config_base.yaml
 
 model:
-  name: Qwen/Qwen2.5-3B-Instruct
+  name: Qwen/Qwen2.5-3B-Instruct     # HF repo_id OR local folder path
+  local_dir: models/qwen2.5-3b       # where to store/download the model
+  revision: main                     # optional: tag/sha
+  trust_remote_code: true            # some repos need this
   type: causal
   max_seq_len: 512
 

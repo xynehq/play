@@ -29,6 +29,7 @@ Single config, QLoRA/LoRA/Full switches, bitsandbytes/Unsloth backends, Jinja ch
 * **Backends** — `bitsandbytes` (default) or `unsloth` (optional; auto-fallback to bnb).
 * **Data pipeline** — raw → structured chat (`system,user,assistant`) → Jinja render on-the-fly.
 * **UI** — **TensorBoard** only (loss/metrics/LR; optional GPU stats).
+* **Model Caching** - Automatically download models from Hugging Face Hub and cache them locally.
 * **Tiny checkpoints** — LoRA adapters only (~50-200 MB vs. full model's multiple GB).
 * **Complete automation** — Makefile + workflows for zero-config setup.
 
@@ -55,7 +56,9 @@ sft-play/
 │  ├─ train.py                  # QLoRA/LoRA/Full; bnb/Unsloth; TB logging
 │  ├─ eval.py                   # ROUGE-L/SARI/Exact-Match (+ schema checks)
 │  ├─ infer.py                  # batch/interactive inference (same template)
-│  └─ merge_lora.py             # merge adapters → single FP16 model (optional)
+│  ├─ merge_lora.py             # merge adapters → single FP16 model (optional)
+│  └─ utils/
+│     └─ model_store.py        # handles model downloading/caching
 ├─ env/
 │  └─ accelerate_config.yaml    # fp16, single-GPU defaults
 ├─ outputs/                     # TB logs, metrics, sample preds
@@ -85,8 +88,11 @@ sft-play/
 include: configs/config_base.yaml
 
 model:
-  name: Qwen/Qwen2.5-3B-Instruct
-  type: causal              # or seq2seq
+  name: Qwen/Qwen2.5-3B-Instruct     # HF repo_id OR local folder path
+  local_dir: models/qwen2.5-3b       # where to store/download the model
+  revision: main                     # optional: tag/sha
+  trust_remote_code: true            # some repos need this
+  type: causal
   max_seq_len: 512
 
 tuning:
@@ -109,10 +115,32 @@ gen:
   top_p: 0.9
 ```
 
-> **What usually changes per run?** `model.name`, `tuning.mode`, `tuning.backend`, occasionally `max_seq_len`, `lora.{r,alpha,dropout}`, or `gen.*`.
+> **What usually changes per run?** `model.name`, `model.local_dir`, `tuning.mode`, `tuning.backend`, occasionally `max_seq_len`, `lora.{r,alpha,dropout}`, or `gen.*`.
 > Everything else stays the same.
 
 ---
+
+## 🤗 Hugging Face Token
+
+To download models from the Hugging Face Hub, you need to provide an access token. You can do this in one of three ways:
+
+1.  **CLI Login (Recommended):**
+    ```bash
+    huggingface-cli login
+    ```
+    This will store your token securely on your machine.
+
+2.  **Environment Variable:**
+    ```bash
+    export HUGGINGFACE_HUB_TOKEN=hf_...
+    ```
+    You can add this to your shell profile (e.g., `.bashrc`, `.zshrc`) or a `.env` file.
+
+3.  **Offline Mode:**
+    After downloading a model once, you can work offline:
+    ```bash
+    export HF_HUB_OFFLINE=1
+    ```
 
 ## 🚀 Quickstart
 
@@ -140,6 +168,11 @@ make setup-dirs             # Create directories
 make full-pipeline          # Complete data processing
 make check                  # Validate setup before training
 make train-with-tb          # Train with TensorBoard monitoring
+```
+
+You can also pre-download models using the Makefile:
+```bash
+make download-model MODEL=Qwen/Qwen2.5-3B-Instruct
 ```
 
 ### Option 2: Manual Step-by-Step
@@ -263,6 +296,7 @@ make infer-batch            # Batch inference from file
 make infer-interactive      # Interactive inference (explicit)
 
 # Model Management
+make download-model         # Download a model from Hugging Face Hub
 make merge                  # Merge LoRA adapters to FP16 model
 make merge-bf16             # Merge LoRA adapters to BF16 model
 make merge-test             # Test merged model loading

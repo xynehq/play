@@ -6,6 +6,8 @@ import torch, yaml
 from jinja2 import Template
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM
 from peft import PeftModel
+from scripts.utils.model_store import prepare_local_model_dir
+import os
 
 # ---------- config ----------
 def deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
@@ -39,17 +41,21 @@ def generate(model, tok, prompts: List[str], max_new_tokens: int, temperature: f
     return tok.batch_decode(out_ids, skip_special_tokens=True)
 
 def load_model_and_tok(cfg, adapters_path: str = None):
-    model_name = cfg["model"]["name"]
+    hf_token = os.getenv("HUGGINGFACE_HUB_TOKEN", None)
+    local_model_dir = prepare_local_model_dir(cfg["model"], hf_token=hf_token)
+
+    model_name = local_model_dir   # from now on, load FROM DISK
+    trust_remote_code = bool(cfg["model"].get("trust_remote_code", False))
     model_type = cfg["model"]["type"]  # "causal" | "seq2seq"
 
-    tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    tok = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=trust_remote_code)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token if tok.eos_token else "<|pad|>"
 
     if model_type == "seq2seq":
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto")
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto", trust_remote_code=trust_remote_code)
     else:
-        model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto")
+        model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto", trust_remote_code=trust_remote_code)
 
     # attach adapters if path exists
     if adapters_path and Path(adapters_path).exists():

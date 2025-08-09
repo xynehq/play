@@ -63,7 +63,12 @@ This document provides a comprehensive overview of the complete project setup an
 - **uv**: Modern, fast Python package manager
 - **Auto-detection**: Makefile automatically chooses the best available option
 
-### 2. Comprehensive Automation
+### 2. Model Caching
+- **Automatic Downloads**: Models are downloaded from Hugging Face Hub on first use.
+- **Local Caching**: Models are stored locally to avoid re-downloading.
+- **Offline Support**: Works offline after the first download.
+
+### 3. Comprehensive Automation
 - **One-command setup**: `./workflows/quick_start.sh`
 - **Granular control**: Individual Makefile commands
 - **Batch processing**: Multiple datasets and experiments
@@ -96,6 +101,9 @@ sft-play/
 ├── workflows/                   # Automation scripts
 │   ├── quick_start.sh          # Interactive setup
 │   └── batch_process.sh        # Batch processing
+├── scripts/
+│   └── utils/
+│       └── model_store.py      # Model caching and downloading
 ├── configs/                     # Configuration files
 ├── data/                        # Data directories
 │   ├── raw/                    # Raw input data
@@ -129,9 +137,12 @@ make train                       # Start training
 make eval                        # Run evaluation
 make infer                       # Run inference
 
+# Model Management
+make download-model              # Pre-download a model
+make merge                       # Merge LoRA adapters
+
 # Utilities
 make clean                       # Clean generated files
-make merge                       # Merge LoRA adapters
 
 # Customization
 make style STYLE="Custom prompt"
