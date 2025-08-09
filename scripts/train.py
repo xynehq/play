@@ -293,8 +293,23 @@ def main():
 
     # Training args
     outdir = cfg["train"]["output_dir"]
-    args_tr = TrainingArguments(
+    import transformers
+    from transformers.trainer_utils import IntervalStrategy
+
+    # ...
+    # Build kwargs adaptively so it works across TF versions
+    ta_fields = getattr(transformers.TrainingArguments, "__dataclass_fields__", {})
+    has_eval_strategy = "evaluation_strategy" in ta_fields
+    has_save_strategy = "save_strategy" in ta_fields
+
+    # Map string -> IntervalStrategy
+    def to_interval(name: str) -> IntervalStrategy:
+        return IntervalStrategy.STEPS if str(name).lower() == "steps" else IntervalStrategy.EPOCH
+
+    ta_kwargs = dict(
         output_dir=outdir,
+        run_name="sft-play",                 # <-- name shown in TB
+        logging_dir="outputs/tb",            # <-- single TB root
         per_device_train_batch_size=bs,
         per_device_eval_batch_size=max(1, bs),
         gradient_accumulation_steps=accum,
@@ -303,21 +318,37 @@ def main():
         warmup_ratio=float(cfg["train"].get("warmup_ratio", 0.06)),
         weight_decay=float(cfg["train"].get("weight_decay", 0.01)),
         fp16=bool(cfg["train"].get("fp16", True)),
-        logging_steps=int(cfg["logging"].get("log_interval", 20)),
-        evaluation_strategy=cfg["train"]["eval_strategy"],
-        save_strategy=cfg["train"]["save_strategy"],
-        eval_steps=int(cfg["train"]["eval_steps"]),
-        save_steps=int(cfg["train"]["save_steps"]),
-        save_total_limit=int(cfg["train"]["save_total_limit"]),
-        load_best_model_at_end=bool(cfg["train"]["load_best_model_at_end"]),
-        metric_for_best_model=cfg["train"]["metric_for_best_model"],
-        greater_is_better=bool(cfg["train"]["greater_is_better"]),
-        report_to="tensorboard",
+        logging_steps=1,
+        save_total_limit=int(cfg["train"].get("save_total_limit", 2)),
+        load_best_model_at_end=bool(cfg["train"].get("load_best_model_at_end", False)),
+        metric_for_best_model=cfg["train"].get("metric_for_best_model", "eval_loss"),
+        greater_is_better=bool(cfg["train"].get("greater_is_better", False)),
+        report_to=["tensorboard"],
         remove_unused_columns=False,
     )
 
-    # Collator for seq2seq (padding) or causal (we return tensors)
-    data_collator = None if not is_seq2seq else DataCollatorForSeq2Seq(tok, model=base_model)
+    # Add eval/save strategies in a version-safe way
+    if has_eval_strategy:
+        ta_kwargs["evaluation_strategy"] = to_interval(cfg["train"].get("eval_strategy", "epoch"))
+    else:
+        ta_kwargs["eval_strategy"] = to_interval(cfg["train"].get("eval_strategy", "epoch"))  # older API
+
+    if has_save_strategy:
+        ta_kwargs["save_strategy"] = to_interval(cfg["train"].get("save_strategy", "epoch"))
+    else:
+        ta_kwargs["save_steps"] = int(cfg["train"].get("save_steps", 100))  # fallback behavior
+
+    # Only add step args if using steps
+    if str(cfg["train"].get("eval_strategy", "epoch")).lower() == "steps":
+        ta_kwargs["eval_steps"] = int(cfg["train"].get("eval_steps", 50))
+
+    if str(cfg["train"].get("save_strategy", "epoch")).lower() == "steps":
+        ta_kwargs["save_steps"] = int(cfg["train"].get("save_steps", 100))
+
+    args_tr = transformers.TrainingArguments(**ta_kwargs)
+
+    # Always use our custom collator (it handles both causal & seq2seq)
+    data_collator = collator
 
     # Resume if checkpoint present
     last_ckpt = get_last_checkpoint(outdir) if os.path.isdir(outdir) else None
@@ -330,14 +361,16 @@ def main():
         train_dataset=ds_train,
         eval_dataset=ds_val,
         data_collator=data_collator,
-        tokenizer=tok,
+        tokenizer=tok,  # fine to keep; warning is harmless
         compute_metrics=compute_metrics(tok),
     )
 
     trainer.train(resume_from_checkpoint=last_ckpt)
+
+    # Force one eval write so TB has eval scalars even on tiny runs
+    trainer.evaluate()                       # <-- add this
     trainer.save_state()
     if mode in ["qlora","lora"]:
-        # Save only adapters (tiny)
         base_model.save_pretrained("adapters/last")
     print("[train] done.")
 

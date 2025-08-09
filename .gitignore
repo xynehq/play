@@ -256,7 +256,6 @@ data/cache/*
 outputs/*
 !outputs/.gitkeep
 checkpoints/
-models/
 *.pth
 *.pt
 *.bin
@@ -279,6 +278,7 @@ training_args.bin
 # Experiment tracking and monitoring
 wandb/
 tensorboard_logs/
+outputs/tb/
 mlruns/
 .mlflow/
 trackio_logs/

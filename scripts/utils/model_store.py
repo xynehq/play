@@ -33,12 +33,23 @@ def prepare_local_model_dir(cfg_model: Dict[str, Any], hf_token: Optional[str] =
     target_path.mkdir(parents=True, exist_ok=True)
 
     if not _has_required_files(target_path):
-        snapshot_download(
+        from huggingface_hub import snapshot_download
+
+        kwargs = dict(
             repo_id=name,
             revision=revision,
             local_dir=target_path,
-            local_dir_use_symlinks=False,  # real files under models/
-            token=hf_token,                # None uses cached login if available
-            ignore_regex=[r".*\.md$"],     # skip large extras if you want
+            local_dir_use_symlinks=False,
+            token=hf_token,
         )
+
+        # Prefer modern param name (glob patterns). Fall back gracefully.
+        try:
+            # skip markdown & large safetensors if you want to be lean; adjust as needed
+            kwargs["ignore_patterns"] = ["*.md", "README*", "LICENSE*"]
+            snapshot_download(**kwargs)
+        except TypeError:
+            # Old hub versions: no ignore_patterns; try without
+            kwargs.pop("ignore_patterns", None)
+            snapshot_download(**kwargs)
     return str(target_path)

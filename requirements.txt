@@ -16,3 +16,4 @@ numpy
 pandas
 scikit-learn
 unsloth
+tf-keras

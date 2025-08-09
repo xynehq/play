@@ -142,6 +142,26 @@ To download models from the Hugging Face Hub, you need to provide an access toke
     export HF_HUB_OFFLINE=1
     ```
 
+## 📈 TensorBoard
+
+We log to a fixed path: `outputs/tb`.
+
+Start it:
+```bash
+make tensorboard            # uses port 6006
+make tensorboard TB_PORT=6007
+```
+
+Stop it:
+```bash
+make tb-stop
+```
+
+If TB shows "No dashboards…" check you're pointing at the absolute path:
+```bash
+tensorboard --logdir "$(pwd)/outputs/tb" --port 6006
+```
+
 ## 🚀 Quickstart
 
 ### Option 1: Automated Setup (Recommended)
@@ -302,8 +322,10 @@ make merge-bf16             # Merge LoRA adapters to BF16 model
 make merge-test             # Test merged model loading
 
 # Monitoring
-make tensorboard            # Start TensorBoard manually
-make stop-tb                # Stop background TensorBoard
+make tensorboard            # Start TensorBoard on outputs/tb
+make tb-stop                # Kill any running TensorBoard
+make tb-clean               # Remove TB event files
+make tb-open                # Print exact path & suggest URL
 
 # Utilities
 make check                  # Validate project setup

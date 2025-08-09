@@ -120,8 +120,13 @@ def main():
     # read raw
     raw_p = Path(args.raw_path)
     if not raw_p.exists():
-        print(f"[process_data] raw file not found: {raw_p}", file=sys.stderr)
-        sys.exit(1)
+        # Fallback to .jsonl if .json is not found
+        if raw_p.suffix == ".json":
+            raw_p = raw_p.with_suffix(".jsonl")
+        
+        if not raw_p.exists():
+            print(f"[process_data] raw file not found: {args.raw_path} or {raw_p}", file=sys.stderr)
+            sys.exit(1)
 
     raw_items: List[Any] = []
     if raw_p.suffix == ".json":

@@ -2,7 +2,7 @@ seed: 42
 run_name: run-01
 
 train:
-  epochs: 3
+  epochs: 30
   warmup_ratio: 0.06
   weight_decay: 0.01
   fp16: true
@@ -23,8 +23,8 @@ data:
   format: chat
   template_path: chat_templates/default.jinja
   split:
-    train_ratio: 0.7
-    val_ratio: 0.1
+    train_ratio: 0.6
+    val_ratio: 0.2
     test_ratio: 0.2
 
 logging:

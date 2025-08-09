@@ -1,4 +1,4 @@
-import argparse, json, sys
+import argparse, json, sys, re
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -71,6 +71,26 @@ def load_model_and_tok(cfg, adapters_path: str = None):
 def render_prompt(tmpl: Template, system_txt: str, user_txt: str) -> str:
     return tmpl.render(system=(system_txt or "").strip(), user=user_txt.strip()).strip()
 
+def clean_generated_text(text: str, model_type: str) -> str:
+    """Clean generated text by removing template markers and extracting assistant response."""
+    if model_type == "seq2seq":
+        return text.strip()
+    
+    # For causal models, clean up template markers
+    # Remove system and user sections if they got regenerated
+    text = re.sub(r"<\|system\|>.*?</\|system\|>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<\|user\|>.*?</\|user\|>", "", text, flags=re.DOTALL)
+    
+    # Remove assistant tags
+    text = re.sub(r"<\|assistant\|>", "", text)
+    text = re.sub(r"</\|assistant\|>", "", text)
+    
+    # Also handle other common chat template formats
+    text = re.sub(r"User:.*?Assistant:", "", text, flags=re.DOTALL)
+    text = re.sub(r"Human:.*?Assistant:", "", text, flags=re.DOTALL)
+    
+    return text.strip()
+
 # ---------- main ----------
 def main():
     ap = argparse.ArgumentParser()
@@ -105,17 +125,16 @@ def main():
                 if not user:
                     continue
                 prompt = render_prompt(tmpl, args.system, user)
+                
+                # For causal models, append assistant tag to get cleaner generation
+                if cfg["model"]["type"] == "causal" and not prompt.endswith("<|assistant|>"):
+                    prompt += "<|assistant|>"
+                
                 pred = generate(model, tok, [prompt], max_new_tokens, temperature, top_p, cfg["model"]["type"])[0]
-                # For causal LMs, generation includes the prompt; try to strip it
-                if cfg["model"]["type"] == "causal":
-                    # naive split on last assistant tag if present
-                    split_tag = "</|assistant|>"
-                    start_tag = "<|assistant|>"
-                    if start_tag in pred:
-                        pred = pred.split(start_tag, 1)[-1]
-                    if split_tag in pred:
-                        pred = pred.split(split_tag, 1)[0]
-                print(f"Model: {pred.strip()}")
+                
+                # Clean the generated text
+                cleaned_pred = clean_generated_text(pred, cfg["model"]["type"])
+                print(f"Model: {cleaned_pred}")
             except KeyboardInterrupt:
                 print("\nbye!")
                 break
@@ -125,10 +144,19 @@ def main():
             sys.exit(1)
         lines = [ln.strip() for ln in Path(args.input_file).read_text().splitlines() if ln.strip()]
         prompts = [render_prompt(tmpl, args.system, u) for u in lines]
+        
+        # For causal models, append assistant tag to get cleaner generation
+        if cfg["model"]["type"] == "causal":
+            prompts = [p + "<|assistant|>" if not p.endswith("<|assistant|>") else p for p in prompts]
+        
         preds = generate(model, tok, prompts, max_new_tokens, temperature, top_p, cfg["model"]["type"])
+        
+        # Clean all predictions
+        cleaned_preds = [clean_generated_text(p, cfg["model"]["type"]) for p in preds]
+        
         Path(args.output_file).parent.mkdir(parents=True, exist_ok=True)
         with open(args.output_file, "w") as f:
-            for p in preds:
+            for p in cleaned_preds:
                 f.write(p.strip() + "\n")
         print(f"[infer] wrote {len(preds)} generations -> {args.output_file}")
 

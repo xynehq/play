@@ -1,10 +1,14 @@
-.PHONY: help install process style render train train-with-tb stop-tb tensorboard eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model
+.PHONY: help install process style render train train-with-tb stop-tb tensorboard tb tb-stop tb-clean tb-open train-and-watch eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model print-python
 
 # Default config file
 CONFIG ?= configs/config_run.yaml
 
 # Style prompt (can be overridden)
 STYLE ?= "Answer concisely in 2 lines. No markdown. If unsure, say 'Not sure'."
+
+# ---- TensorBoard config ----
+TB_PORT ?= 6006
+TB_LOGDIR ?= $(shell realpath outputs/tb)
 
 help:
 	@echo "SFT-Play Makefile Commands:"
@@ -31,8 +35,10 @@ help:
 	@echo "  infer-interactive Interactive inference (explicit)"
 	@echo ""
 	@echo "Monitoring:"
-	@echo "  tensorboard   Start TensorBoard (manual)"
-	@echo "  stop-tb       Stop background TensorBoard"
+	@echo "  tensorboard   Start TensorBoard on outputs/tb"
+	@echo "  tb-stop       Kill any running TensorBoard"
+	@echo "  tb-clean      Remove TB event files"
+	@echo "  tb-open       Print exact path & suggest URL"
 	@echo ""
 	@echo "Model Management:"
 	@echo "  merge         Merge LoRA adapters to FP16 model"
@@ -47,6 +53,10 @@ help:
 	@echo "Variables:"
 	@echo "  CONFIG=path   Specify config file (default: configs/config_run.yaml)"
 	@echo "  STYLE=text    Specify style prompt for style command"
+
+print-python:
+	@echo "which python: `which python`"
+	@python -c "import sys; print(f'sys.executable: {sys.executable}')"
 
 .PHONY: download-model
 MODEL?=Qwen/Qwen2.5-3B-Instruct
@@ -89,7 +99,7 @@ style:
 	fi
 	python scripts/style_prompt.py \
 		--config $(CONFIG) \
-		--style $(STYLE) \
+		--style "$(STYLE)" \
 		--in data/processed/train.jsonl \
 		--out data/processed_with_style/train.jsonl \
 		--mode prepend
@@ -98,7 +108,7 @@ style:
 			echo "Processing $$split split..."; \
 			python scripts/style_prompt.py \
 				--config $(CONFIG) \
-				--style $(STYLE) \
+				--style "$(STYLE)" \
 				--in data/processed/$$split.jsonl \
 				--out data/processed_with_style/$$split.jsonl \
 				--mode prepend; \
@@ -127,57 +137,71 @@ render:
 
 train:
 	@echo "Starting training..."
-	python scripts/train.py --config $(CONFIG)
+	PYTHONPATH=. python scripts/train.py --config $(CONFIG)
 
+## train-with-tb: Train + print how to launch TB
 train-with-tb:
-	@echo "Starting training with TensorBoard..."
-	@echo "TensorBoard will be available at http://localhost:6006"
-	@echo "Starting TensorBoard in background..."
-	@nohup tensorboard --logdir outputs/ --port 6006 > /dev/null 2>&1 & echo $$! > .tensorboard.pid
-	@echo "Starting training..."
-	python scripts/train.py --config $(CONFIG)
-	@echo "Training completed. TensorBoard is still running."
-	@echo "To stop TensorBoard: make stop-tb"
+	@echo "Starting training…"
+	PYTHONPATH=. python scripts/train.py --config $(CONFIG)
+	@echo ""
+	@echo "✅ Training finished. To view logs:"
+	@echo "   make tensorboard TB_PORT=$(TB_PORT)"
 
-stop-tb:
-	@if [ -f .tensorboard.pid ]; then \
-		echo "Stopping TensorBoard..."; \
-		kill `cat .tensorboard.pid` 2>/dev/null || true; \
-		rm -f .tensorboard.pid; \
-		echo "TensorBoard stopped."; \
-	else \
-		echo "TensorBoard PID file not found."; \
-	fi
+## train-and-watch: Start TB (bg) then train
+train-and-watch:
+	@mkdir -p outputs/tb
+	@pkill -f tensorboard || true
+	@nohup tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0 >/dev/null 2>&1 &
+	@sleep 2
+	@echo "📈 TensorBoard at http://localhost:$(TB_PORT)"
+	PYTHONPATH=. python scripts/train.py --config $(CONFIG)
 
-tensorboard:
-	@echo "Starting TensorBoard..."
-	@echo "TensorBoard will be available at http://localhost:6006"
-	tensorboard --logdir outputs/ --port 6006
+## tensorboard: Start TensorBoard on outputs/tb (override TB_PORT=6007 if needed)
+tensorboard tb:
+	@if [ ! -d "outputs/tb" ]; then mkdir -p outputs/tb; fi
+	@echo "👉 Launching TensorBoard at http://localhost:$(TB_PORT) (logdir=$(TB_LOGDIR))"
+	@tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0
+
+## tb-stop: Kill any running TensorBoard
+tb-stop:
+	@pkill -f tensorboard || true
+	@echo "✅ Stopped any running TensorBoard"
+
+## tb-clean: Remove TB event files
+tb-clean:
+	@rm -rf outputs/tb
+	@mkdir -p outputs/tb
+	@echo "🧹 Cleaned outputs/tb"
+
+## tb-open: Print exact path & suggest URL
+tb-open:
+	@echo "Logdir: $(TB_LOGDIR)"
+	@echo "Visit:  http://localhost:$(TB_PORT)"
 
 eval:
 	@echo "Running evaluation on validation set..."
-	python scripts/eval.py --config $(CONFIG) --split val
+	PYTHONPATH=. python scripts/eval.py --config $(CONFIG) --split val
 
 eval-test:
 	@echo "Running evaluation on test set..."
-	python scripts/eval.py --config $(CONFIG) --split test
+	PYTHONPATH=. python scripts/eval.py --config $(CONFIG) --split test
 
 eval-val:
 	@echo "Running evaluation on validation set..."
-	python scripts/eval.py --config $(CONFIG) --split val
+	PYTHONPATH=. python scripts/eval.py --config $(CONFIG) --split val
 
 eval-quick:
 	@echo "Running quick evaluation (200 samples)..."
-	python scripts/eval.py --config $(CONFIG) --split val --limit 200
+	PYTHONPATH=. python scripts/eval.py --config $(CONFIG) --split val --limit 200
 
 eval-full:
 	@echo "Running full evaluation (no limit)..."
-	python scripts/eval.py --config $(CONFIG) --split val --limit 0
+	PYTHONPATH=. python scripts/eval.py --config $(CONFIG) --split val --limit 0
 
 infer:
 	@echo "Starting interactive inference..."
 	@echo "Type your questions. Press Ctrl+C to exit."
-	python scripts/infer.py --config $(CONFIG) --mode interactive
+	PYTHONPATH=. python scripts/infer.py --config $(CONFIG) --mode interactive
 
 infer-batch:
 	@echo "Running batch inference..."
@@ -187,21 +211,21 @@ infer-batch:
 		echo "Explain neural networks briefly." >> demo_inputs.txt; \
 		echo "What is QLoRA?" >> demo_inputs.txt; \
 	fi
-	python scripts/infer.py --config $(CONFIG) --mode batch --input_file demo_inputs.txt --output_file outputs/preds.txt
+	PYTHONPATH=. python scripts/infer.py --config $(CONFIG) --mode batch --input_file demo_inputs.txt --output_file outputs/preds.txt
 	@echo "Results saved to outputs/preds.txt"
 
 infer-interactive:
 	@echo "Starting interactive inference..."
 	@echo "Type your questions. Press Ctrl+C to exit."
-	python scripts/infer.py --config $(CONFIG) --mode interactive
+	PYTHONPATH=. python scripts/infer.py --config $(CONFIG) --mode interactive
 
 merge:
 	@echo "Merging LoRA adapters..."
-	python scripts/merge_lora.py --config $(CONFIG) --adapters adapters/last --out outputs/merged_fp16 --dtype fp16
+	PYTHONPATH=. python scripts/merge_lora.py --config $(CONFIG) --adapters adapters/last --out outputs/merged_fp16 --dtype fp16
 
 merge-bf16:
 	@echo "Merging LoRA adapters (bfloat16)..."
-	python scripts/merge_lora.py --config $(CONFIG) --adapters adapters/last --out outputs/merged_bf16 --dtype bf16
+	PYTHONPATH=. python scripts/merge_lora.py --config $(CONFIG) --adapters adapters/last --out outputs/merged_bf16 --dtype bf16
 
 merge-test:
 	@echo "Testing merged model..."
