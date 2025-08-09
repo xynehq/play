@@ -194,6 +194,24 @@ tqdm
 
 ## Quickstart (End-to-End)
 
+### Option 1: Automated Setup (Recommended)
+
+```bash
+# Quick start with interactive setup
+./workflows/quick_start.sh
+
+# Or use Makefile commands
+make help                    # See all available commands
+make install                 # Install dependencies
+make setup-dirs             # Create directory structure
+make full-pipeline          # Run complete data processing
+make train                  # Start training
+make eval                   # Evaluate model
+make infer                  # Run inference
+```
+
+### Option 2: Manual Step-by-Step
+
 ```bash
 # 0) Install
 pip install -r requirements.txt
@@ -222,6 +240,66 @@ python scripts/infer.py --config configs/config_run.yaml \
 python scripts/merge_lora.py --config configs/config_run.yaml \
   --out outputs/merged_fp16
 ```
+
+## Automation & Workflows
+
+### Makefile Commands
+
+The project includes a comprehensive Makefile for easy automation:
+
+```bash
+# Setup and installation
+make install                 # Auto-detect and use uv or pip
+make setup-dirs             # Create all necessary directories
+
+# Data processing pipeline
+make process                # Process raw data
+make style                  # Apply style prompts to all splits
+make render                 # Render chat templates
+make full-pipeline          # Run complete data processing
+
+# Training and evaluation
+make train                  # Start training
+make eval                   # Run evaluation
+make infer                  # Run inference with demo data
+
+# Utilities
+make clean                  # Clean all generated files
+make merge                  # Merge LoRA adapters
+
+# Customization
+make style STYLE="Your custom style prompt"
+make train CONFIG=configs/your_config.yaml
+```
+
+### Quick Start Script
+
+Interactive setup with sample data:
+
+```bash
+./workflows/quick_start.sh
+```
+
+This script will:
+- Set up directories
+- Install dependencies
+- Create sample data if none exists
+- Guide you through the complete pipeline
+- Provide next steps
+
+### Batch Processing
+
+For processing multiple datasets:
+
+```bash
+./workflows/batch_process.sh
+```
+
+Features:
+- Process multiple datasets with different configurations
+- Apply different style prompts per dataset
+- Run multiple training experiments
+- Automated experiment tracking
 
 ## Configuration Examples
 

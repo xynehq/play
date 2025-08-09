@@ -23,9 +23,9 @@ data:
   format: chat
   template_path: chat_templates/default.jinja
   split:
-    train_ratio: 0.8
+    train_ratio: 0.7
     val_ratio: 0.1
-    test_ratio: 0.1
+    test_ratio: 0.2
 
 logging:
   backend: tensorboard

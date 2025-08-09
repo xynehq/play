@@ -1,4 +1,3 @@
-# scripts/process_data.py
 import argparse, json, os, random, sys, csv
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
@@ -174,7 +173,7 @@ def main():
     write_jsonl(out_val,   val_rows)
     write_jsonl(out_test,  test_rows)
 
-    # tiny report
+    # Gives tiny report
     def avg_len(key, rows): 
         return round(sum(len(r.get(key,"")) for r in rows)/max(1,len(rows)), 1)
 
