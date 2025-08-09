@@ -182,3 +182,5 @@ EOF
 
 # Run main function
 main "$@"
+echo ""
+print_success "Batch processing script completed! 🎉"
