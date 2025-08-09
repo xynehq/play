@@ -210,6 +210,17 @@ If TB shows "No dashboards…" check you're pointing at the absolute path:
 tensorboard --logdir "$(pwd)/outputs/tb" --port 6006
 ```
 
+### TensorBoard Screenshots
+
+**Training Progress Monitoring:**
+![TensorBoard Training](results/Screenshot%20from%202025-08-10%2001-40-11.png)
+
+**Loss and Learning Rate Tracking:**
+![Loss and LR Tracking](results/Screenshot%20from%202025-08-10%2001-55-29.png)
+
+**Evaluation Metrics:**
+![Evaluation Metrics](results/Screenshot%20from%202025-08-10%2002-04-51.png)
+
 ## 🚀 Quickstart
 
 ### Option 1: Automated Setup (Recommended)
@@ -226,6 +237,11 @@ This interactive script will:
 - Generate sample data if none exists
 - Process data through the complete pipeline
 - Guide you to training
+
+**Setup and Training Screenshots:**
+![Setup Process](results/Screenshot%20from%202025-08-10%2002-07-35.png)
+
+![Training Configuration](results/Screenshot%20from%202025-08-10%2002-26-09.png)
 
 **Or use individual Makefile commands:**
 
@@ -357,6 +373,9 @@ These improvements ensure that:
 - Output is clean and contains only the intended assistant response
 - Template consistency is maintained between training and inference
 - Multi-turn conversations don't bleed into single responses
+
+**Inference in Action:**
+![Interactive Inference](results/Screenshot%20from%202025-08-10%2003-18-39.png)
 
 #### 8) (Optional) Merge adapters → FP16 model
 
