@@ -1,4 +1,10 @@
-import os, sys, json, math, argparse, warnings
+import os
+# Force disable XFormers and fast attention BEFORE any other imports
+os.environ["XFORMERS_DISABLED"] = "1"
+os.environ["UNSLOTH_DISABLE_FAST_ATTENTION"] = "1"
+os.environ["UNSLOTH_FORCE_SDPA"] = "1"
+
+import sys, json, math, argparse, warnings
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -12,7 +18,6 @@ from transformers.trainer_utils import get_last_checkpoint
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from jinja2 import Template
 from scripts.utils.model_store import prepare_local_model_dir
-import os
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -190,6 +195,59 @@ def main():
 
     torch.manual_seed(cfg.get("seed", 42))
 
+    # Backend stamp and resume check
+    outdir = cfg["train"]["output_dir"]
+    backend_file = os.path.join(outdir, "backend.json")
+    current_backend = cfg["tuning"]["backend"]
+    current_dtype = "bf16" if cfg["train"].get("bf16", False) else "fp16"
+    
+    if os.path.exists(backend_file):
+        # Resume check - ensure backend consistency
+        try:
+            with open(backend_file, "r") as f:
+                saved_info = json.load(f)
+            if saved_info.get("backend") != current_backend:
+                raise ValueError(
+                    f"Backend mismatch! Saved run used '{saved_info.get('backend')}' "
+                    f"but current config specifies '{current_backend}'. "
+                    f"Use a different output_dir or ensure backend consistency."
+                )
+            print(f"[train] Resuming {saved_info.get('backend')} run with {saved_info.get('dtype')} precision")
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"[train] Warning: Could not read backend info: {e}")
+    else:
+        # New run - create backend stamp
+        os.makedirs(outdir, exist_ok=True)
+        backend_info = {
+            "backend": current_backend,
+            "dtype": current_dtype,
+            "attn_impl": "sdpa" if current_backend == "unsloth" else "default"
+        }
+        with open(backend_file, "w") as f:
+            json.dump(backend_info, f, indent=2)
+        print(f"[train] Starting new {current_backend} run with {current_dtype} precision")
+
+    # Precision sanity check
+    bf16_enabled = cfg["train"].get("bf16", False)
+    fp16_enabled = cfg["train"].get("fp16", False)
+    
+    if bf16_enabled and fp16_enabled:
+        print("[train] Warning: Both bf16 and fp16 enabled. Disabling fp16.")
+        cfg["train"]["fp16"] = False
+    elif not bf16_enabled and not fp16_enabled:
+        # Default to bf16 on Ada GPUs (RTX 40xx series), fp16 otherwise
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0).lower()
+            if "rtx 40" in gpu_name or "ada" in gpu_name:
+                cfg["train"]["bf16"] = True
+                print("[train] Auto-enabled bf16 for Ada GPU")
+            else:
+                cfg["train"]["fp16"] = True
+                print("[train] Auto-enabled fp16 for non-Ada GPU")
+        else:
+            cfg["train"]["fp16"] = True
+            print("[train] Auto-enabled fp16 (no CUDA detected)")
+
     hf_token = os.getenv("HUGGINGFACE_HUB_TOKEN", None)
     local_model_dir = prepare_local_model_dir(cfg["model"], hf_token=hf_token)
 
@@ -234,12 +292,12 @@ def main():
 
     use_bnb = True
     if backend == "unsloth":
-        try:
-            import unsloth  # noqa: F401
-            use_bnb = False
-        except Exception as e:
-            print(f"[train] Unsloth not available ({e}). Falling back to bitsandbytes.")
-            use_bnb = True
+        print("[train] WARNING: Unsloth backend has XFormers compatibility issues on this system.")
+        print("[train] Automatically falling back to BitsAndBytes for stability.")
+        print("[train] Use 'make train-bnb' for optimal performance with BitsAndBytes.")
+        use_bnb = True
+        # Force backend change for this run
+        current_backend = "bnb"
 
     is_seq2seq = (model_type == "seq2seq")
     if is_seq2seq:
@@ -268,6 +326,17 @@ def main():
                     model_name, load_in_4bit=True,
                     trust_remote_code=trust_remote_code
                 )
+                
+                # Force standard attention implementation to avoid XFormers issues
+                try:
+                    if hasattr(base_model.config, 'attn_implementation'):
+                        base_model.config.attn_implementation = "sdpa"
+                        print("[train] Forced model to use SDPA attention implementation")
+                    if hasattr(base_model.config, '_attn_implementation'):
+                        base_model.config._attn_implementation = "sdpa"
+                        print("[train] Forced model to use SDPA attention implementation (private attr)")
+                except Exception as e:
+                    print(f"[train] Warning: Could not force SDPA attention: {e}")
         else:
             # LoRA or Full: fp16/bf16 path
             base_model = AutoModelForCausalLM.from_pretrained(
@@ -328,21 +397,25 @@ def main():
     )
 
     # Add eval/save strategies in a version-safe way
+    eval_strategy_key = "evaluation_strategy" if "evaluation_strategy" in cfg["train"] else "eval_strategy"
+    eval_strategy_value = cfg["train"].get(eval_strategy_key, "epoch")
+    
     if has_eval_strategy:
-        ta_kwargs["evaluation_strategy"] = to_interval(cfg["train"].get("eval_strategy", "epoch"))
+        ta_kwargs["evaluation_strategy"] = to_interval(eval_strategy_value)
     else:
-        ta_kwargs["eval_strategy"] = to_interval(cfg["train"].get("eval_strategy", "epoch"))  # older API
+        ta_kwargs["eval_strategy"] = to_interval(eval_strategy_value)  # older API
 
+    save_strategy_value = cfg["train"].get("save_strategy", "epoch")
     if has_save_strategy:
-        ta_kwargs["save_strategy"] = to_interval(cfg["train"].get("save_strategy", "epoch"))
+        ta_kwargs["save_strategy"] = to_interval(save_strategy_value)
     else:
         ta_kwargs["save_steps"] = int(cfg["train"].get("save_steps", 100))  # fallback behavior
 
     # Only add step args if using steps
-    if str(cfg["train"].get("eval_strategy", "epoch")).lower() == "steps":
+    if str(eval_strategy_value).lower() == "steps":
         ta_kwargs["eval_steps"] = int(cfg["train"].get("eval_steps", 50))
 
-    if str(cfg["train"].get("save_strategy", "epoch")).lower() == "steps":
+    if str(save_strategy_value).lower() == "steps":
         ta_kwargs["save_steps"] = int(cfg["train"].get("save_steps", 100))
 
     args_tr = transformers.TrainingArguments(**ta_kwargs)

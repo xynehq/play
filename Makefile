@@ -24,7 +24,11 @@ help:
 	@echo ""
 	@echo "Training & Evaluation:"
 	@echo "  train         Start training with current config"
+	@echo "  train-bnb     Start training with BitsAndBytes backend"
+	@echo "  train-unsloth Start training with Unsloth backend"
 	@echo "  train-with-tb Start training with TensorBoard monitoring"
+	@echo "  train-bnb-tb  Start BitsAndBytes training with TensorBoard"
+	@echo "  train-unsloth-tb Start Unsloth training with TensorBoard"
 	@echo "  eval          Evaluate trained model (validation set)"
 	@echo "  eval-test     Evaluate on test set"
 	@echo "  eval-val      Evaluate on validation set"
@@ -139,10 +143,32 @@ train:
 	@echo "Starting training..."
 	PYTHONPATH=. python scripts/train.py --config $(CONFIG)
 
+train-bnb:
+	@echo "Starting training with BitsAndBytes backend..."
+	PYTHONPATH=. python scripts/train.py --config configs/run_bnb.yaml
+
+train-unsloth:
+	@echo "Starting training with Unsloth backend (XFormers disabled)..."
+	XFORMERS_DISABLED=1 UNSLOTH_DISABLE_FAST_ATTENTION=1 PYTHONPATH=. python scripts/train.py --config configs/run_unsloth.yaml
+
 ## train-with-tb: Train + print how to launch TB
 train-with-tb:
 	@echo "Starting training…"
 	PYTHONPATH=. python scripts/train.py --config $(CONFIG)
+	@echo ""
+	@echo "✅ Training finished. To view logs:"
+	@echo "   make tensorboard TB_PORT=$(TB_PORT)"
+
+train-bnb-tb:
+	@echo "Starting BitsAndBytes training with TensorBoard..."
+	PYTHONPATH=. python scripts/train.py --config configs/run_bnb.yaml
+	@echo ""
+	@echo "✅ Training finished. To view logs:"
+	@echo "   make tensorboard TB_PORT=$(TB_PORT)"
+
+train-unsloth-tb:
+	@echo "Starting Unsloth training with TensorBoard..."
+	XFORMERS_DISABLED=1 UNSLOTH_DISABLE_FAST_ATTENTION=1 PYTHONPATH=. python scripts/train.py --config configs/run_unsloth.yaml
 	@echo ""
 	@echo "✅ Training finished. To view logs:"
 	@echo "   make tensorboard TB_PORT=$(TB_PORT)"

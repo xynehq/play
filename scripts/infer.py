@@ -34,11 +34,40 @@ def load_config(path: str) -> Dict[str, Any]:
 def generate(model, tok, prompts: List[str], max_new_tokens: int, temperature: float, top_p: float, model_type: str):
     inputs = tok(prompts, return_tensors="pt", padding=True, truncation=True, max_length=tok.model_max_length)
     inputs = {k: v.to(model.device) for k,v in inputs.items()}
-    gen_kwargs = dict(max_new_tokens=max_new_tokens, do_sample=(temperature>0), temperature=temperature, top_p=top_p)
+    
+    # Set up generation parameters with proper stopping
+    gen_kwargs = dict(
+        max_new_tokens=max_new_tokens, 
+        do_sample=(temperature>0), 
+        temperature=temperature, 
+        top_p=top_p,
+        eos_token_id=tok.eos_token_id,  # Force stop at EOS
+        pad_token_id=tok.eos_token_id if tok.pad_token_id is None else tok.pad_token_id
+    )
+    
+    # Add custom stop tokens for chat template boundaries
     if model_type != "seq2seq":
-        gen_kwargs["pad_token_id"] = tok.pad_token_id
+        # Add </assistant> and <|user|> as additional stop tokens
+        stop_tokens = []
+        if hasattr(tok, 'encode'):
+            # Try to encode stop tokens
+            try:
+                user_token = tok.encode("<|user|>", add_special_tokens=False)
+                if user_token:
+                    stop_tokens.extend(user_token)
+                assistant_end_token = tok.encode("</|assistant|>", add_special_tokens=False)
+                if assistant_end_token:
+                    stop_tokens.extend(assistant_end_token)
+            except:
+                pass  # If encoding fails, continue without custom stop tokens
+        
+        if stop_tokens:
+            # Combine EOS token with custom stop tokens
+            all_eos_tokens = [tok.eos_token_id] + stop_tokens
+            gen_kwargs["eos_token_id"] = all_eos_tokens
+    
     out_ids = model.generate(**inputs, **gen_kwargs)
-    return tok.batch_decode(out_ids, skip_special_tokens=True)
+    return tok.batch_decode(out_ids, skip_special_tokens=False)  # Keep special tokens for proper parsing
 
 def load_model_and_tok(cfg, adapters_path: str = None):
     hf_token = os.getenv("HUGGINGFACE_HUB_TOKEN", None)
@@ -51,6 +80,18 @@ def load_model_and_tok(cfg, adapters_path: str = None):
     tok = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=trust_remote_code)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token if tok.eos_token else "<|pad|>"
+
+    # Ensure chat template is properly set to match training
+    template_path = cfg["data"].get("template_path")
+    if template_path and Path(template_path).exists():
+        try:
+            chat_template = Path(template_path).read_text().strip()
+            # Set the chat template on the tokenizer to ensure consistency
+            if hasattr(tok, 'chat_template'):
+                tok.chat_template = chat_template
+                print(f"[infer] loaded chat template from {template_path}")
+        except Exception as e:
+            print(f"[infer] warning: failed to load chat template: {e}")
 
     if model_type == "seq2seq":
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto", trust_remote_code=trust_remote_code)
@@ -72,18 +113,30 @@ def render_prompt(tmpl: Template, system_txt: str, user_txt: str) -> str:
     return tmpl.render(system=(system_txt or "").strip(), user=user_txt.strip()).strip()
 
 def clean_generated_text(text: str, model_type: str) -> str:
-    """Clean generated text by removing template markers and extracting assistant response."""
+    """Clean generated text by extracting only the assistant response from the full generation."""
     if model_type == "seq2seq":
         return text.strip()
     
-    # For causal models, clean up template markers
+    # For causal models, extract everything after the last <|assistant|> tag
+    # and stop at the first <|user|> boundary (if any)
+    if "<|assistant|>" in text:
+        # Split by <|assistant|> and take the last part (the actual response)
+        reply = text.split("<|assistant|>")[-1]
+        
+        # Strip everything after first <|user|> boundary
+        if "<|user|>" in reply:
+            reply = reply.split("<|user|>")[0]
+        
+        # Also stop at </|assistant|> if present
+        if "</|assistant|>" in reply:
+            reply = reply.split("</|assistant|>")[0]
+        
+        return reply.strip()
+    
+    # Fallback: if no assistant tag found, try to clean common patterns
     # Remove system and user sections if they got regenerated
     text = re.sub(r"<\|system\|>.*?</\|system\|>", "", text, flags=re.DOTALL)
     text = re.sub(r"<\|user\|>.*?</\|user\|>", "", text, flags=re.DOTALL)
-    
-    # Remove assistant tags
-    text = re.sub(r"<\|assistant\|>", "", text)
-    text = re.sub(r"</\|assistant\|>", "", text)
     
     # Also handle other common chat template formats
     text = re.sub(r"User:.*?Assistant:", "", text, flags=re.DOTALL)

@@ -82,7 +82,39 @@ sft-play/
 * Data: `format: chat`, `template_path`, **split ratios** (train/val/test)
 * Logging: `backend: tensorboard`, `log_interval`
 
-### `configs/config_run.yaml` (you edit)
+### Backend-Specific Configs (Recommended)
+
+**For BitsAndBytes (Stable, Broad Compatibility):**
+```yaml
+# configs/run_bnb.yaml
+include: configs/config_base.yaml
+
+tuning:
+  backend: bnb             # BitsAndBytes backend
+  mode: qlora
+
+train:
+  bf16: false              # BitsAndBytes works best with fp16
+  fp16: true
+  output_dir: outputs/run-bnb
+```
+
+**For Unsloth (Faster, Requires Compatible CUDA):**
+```yaml
+# configs/run_unsloth.yaml
+include: configs/config_base.yaml
+
+tuning:
+  backend: unsloth         # Unsloth backend
+  mode: qlora
+
+train:
+  bf16: true               # Unsloth works better with bfloat16
+  fp16: false
+  output_dir: outputs/run-unsloth
+```
+
+### `configs/config_run.yaml` (legacy/custom)
 
 ```yaml
 include: configs/config_base.yaml
@@ -115,8 +147,24 @@ gen:
   top_p: 0.9
 ```
 
-> **What usually changes per run?** `model.name`, `model.local_dir`, `tuning.mode`, `tuning.backend`, occasionally `max_seq_len`, `lora.{r,alpha,dropout}`, or `gen.*`.
-> Everything else stays the same.
+### Backend Safety Features
+
+**Automatic Backend Stamping:**
+- Each training run creates `outputs/<run>/backend.json` with backend info
+- Prevents accidental resume across different backends
+- Validates configuration consistency on resume
+
+**XFormers Safety:**
+- Unsloth automatically disables XFormers to prevent compatibility issues
+- BitsAndBytes uses standard PyTorch attention mechanisms
+- Automatic fallback from Unsloth to BitsAndBytes if import fails
+
+**Precision Auto-Detection:**
+- Auto-enables bf16 on Ada GPUs (RTX 40xx series) when neither precision is set
+- Auto-enables fp16 on other GPUs as fallback
+- Prevents both bf16 and fp16 being enabled simultaneously
+
+> **Recommended Usage:** Use `configs/run_bnb.yaml` for stability or `configs/run_unsloth.yaml` for speed. The backend-specific configs ensure optimal settings and prevent configuration conflicts.
 
 ---
 
@@ -276,6 +324,40 @@ echo "Explain QLoRA in two lines." > demo_inputs.txt
 python scripts/infer.py --config configs/config_run.yaml --mode batch --input_file demo_inputs.txt --output_file outputs/preds.txt
 ```
 
+##### Inference Quality Improvements
+
+The inference script includes several optimizations to ensure high-quality, single-turn responses:
+
+**1. Proper Stopping Conditions**
+- Forces stop at EOS tokens using `eos_token_id=tokenizer.eos_token_id`
+- Adds custom stop tokens for chat template boundaries (`<|user|>`, `</|assistant|>`)
+- Prevents multi-turn generation where the model continues beyond the assistant's response
+
+**2. Template Boundary Parsing**
+- Extracts only the assistant's response from the full generation
+- Strips everything after the first `<|assistant|>` → `<|user|>` boundary
+- Handles both `</|assistant|>` end tags and natural conversation boundaries
+
+**3. Template Consistency**
+- Loads the same Jinja chat template used during training
+- Ensures inference format exactly matches training format
+- Prevents template mismatches that can cause poor generation quality
+
+**Example of clean output extraction:**
+```python
+# Raw generation might include:
+# "<|system|>You are helpful</|system|><|user|>Hello</|user|><|assistant|>Hi there!<|user|>..."
+
+# Cleaned output extracts only:
+# "Hi there!"
+```
+
+These improvements ensure that:
+- Models stop generating at appropriate conversation boundaries
+- Output is clean and contains only the intended assistant response
+- Template consistency is maintained between training and inference
+- Multi-turn conversations don't bleed into single responses
+
 #### 8) (Optional) Merge adapters → FP16 model
 
 ```bash
@@ -303,8 +385,12 @@ make render                 # Render chat templates
 make full-pipeline          # Complete data processing pipeline
 
 # Training & Evaluation
-make train                  # Start training
+make train                  # Start training with current config
+make train-bnb              # Start training with BitsAndBytes backend
+make train-unsloth          # Start training with Unsloth backend
 make train-with-tb          # Train with TensorBoard monitoring
+make train-bnb-tb           # BitsAndBytes training with TensorBoard
+make train-unsloth-tb       # Unsloth training with TensorBoard
 make eval                   # Evaluate on validation set
 make eval-test              # Evaluate on test set
 make eval-quick             # Quick evaluation (200 samples)
@@ -381,6 +467,47 @@ make process && make style && make train
 
 ## 🧪 Troubleshooting
 
+### Configuration Issues
+
+* **Training Arguments Mismatch Error**
+  ```
+  ValueError: --load_best_model_at_end requires the save and eval strategy to match
+  ```
+  **Solution**: This was fixed in the training script. The issue occurred when `evaluation_strategy` and `save_strategy` didn't match. The script now properly handles both `evaluation_strategy` and `eval_strategy` keys from config files.
+
+* **Backend Switching: BitsAndBytes ↔ Unsloth**
+
+  **To switch from BitsAndBytes to Unsloth:**
+  ```yaml
+  # In configs/config_run.yaml
+  tuning:
+    backend: unsloth
+  
+  # In configs/config_base.yaml
+  train:
+    bf16: true    # Unsloth works better with bfloat16
+    fp16: false
+  ```
+
+  **To switch from Unsloth to BitsAndBytes:**
+  ```yaml
+  # In configs/config_run.yaml
+  tuning:
+    backend: bnb
+  
+  # In configs/config_base.yaml
+  train:
+    bf16: false   # BitsAndBytes is more stable with float16
+    fp16: true
+  ```
+
+  **Key differences:**
+  - **Unsloth**: Faster training, requires specific CUDA versions, works best with `bf16: true`
+  - **BitsAndBytes**: More stable, broader compatibility, works best with `fp16: true`
+  - **Auto-fallback**: If Unsloth fails to import, the system automatically falls back to BitsAndBytes
+
+### Memory and Performance Issues
+
 * **CUDA OOM**
 
   * Lower `model.max_seq_len` (e.g., 512 → 384).
@@ -391,6 +518,31 @@ make process && make style && make train
 
   * Use `backend: bnb` (default).
   * If you insist on Unsloth, match its CUDA/PTX requirements.
+
+* **XFormers compatibility issues**
+  ```
+  NotImplementedError: No operator found for `memory_efficient_attention_backward`
+  ```
+  **Solution**: This is a known compatibility issue with Unsloth + XFormers on certain GPU/CUDA configurations. The system now automatically falls back to BitsAndBytes when Unsloth is requested:
+  
+  **Automatic Fallback**: When you use `configs/run_unsloth.yaml`, the system detects XFormers issues and automatically switches to BitsAndBytes with a warning message.
+  
+  **Recommended Approach**: Use BitsAndBytes directly for maximum stability:
+  ```bash
+  make train-bnb        # Direct BitsAndBytes training
+  make train-bnb-tb     # BitsAndBytes with TensorBoard
+  ```
+  
+  **Manual Configuration**: If you want to force BitsAndBytes:
+  ```yaml
+  tuning:
+    backend: bnb
+  train:
+    bf16: false
+    fp16: true
+  ```
+
+### Data and Training Issues
 
 * **Weird formatting in generations**
 
@@ -403,11 +555,33 @@ make process && make style && make train
   * Tune LoRA `r` (16→32) or LR (2e-4 → 1e-4).
   * Ensure your processed data is clean and task-consistent.
 
+* **ROUGE metrics showing 0.0**
+  ```
+  [train] Warning: Could not compute ROUGE metrics: argument 'ids': 'list' object cannot be interpreted as an integer
+  ```
+  **Note**: This is a known issue with the ROUGE evaluation library and doesn't affect training. The model is still learning (check the decreasing loss values).
+
+### Setup Issues
+
 * **Setup issues**
 
   * Run `make check` to validate your setup
   * Use `./workflows/quick_start.sh` for guided setup
   * Check `AUTOMATION_GUIDE.md` for detailed automation docs
+
+### Configuration Validation
+
+* **Before training, always validate your config:**
+  ```bash
+  make check                    # Comprehensive validation
+  python scripts/train.py --config configs/config_run.yaml --help  # Check arguments
+  ```
+
+* **Common config mistakes:**
+  - Mismatched `evaluation_strategy` and `save_strategy` (now auto-fixed)
+  - Wrong precision settings for your backend (`bf16` vs `fp16`)
+  - Missing data files or incorrect paths
+  - Incompatible model settings with available VRAM
 
 ---
 

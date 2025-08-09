@@ -10,19 +10,24 @@ model:
 
 tuning:
   mode: qlora          # qlora | lora | full
-  backend: unsloth         # bnb | unsloth
+  backend: unsloth     # Unsloth backend
   lora:
     r: 32
     alpha: 32
     dropout: 0.05
     target_modules: auto
 
+train:
+  bf16: true           # Unsloth works better with bfloat16
+  fp16: false
+  output_dir: outputs/run-unsloth
+  evaluation_strategy: steps
+  save_strategy: steps
+  eval_steps: 1
+  save_steps: 10
+
 data:
   train_path: data/processed/train.jsonl
   val_path:   data/processed/val.jsonl
   test_path:  data/processed/test.jsonl
   cache_dir: data/cache
-
-  bf16: true #set to true if using Unsloth backend
-  fp16: false # set to true if using BNB backend
-  max_seq_len: 512

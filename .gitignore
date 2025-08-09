@@ -318,6 +318,14 @@ huggingface_hub/
 merged_fp16/
 merged_models/
 
+#unsloth specific files
+unsloth_cache/
+unsloth_compiled_cache/
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
 # Temporary inference outputs
 preds.txt
 predictions.txt

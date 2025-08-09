@@ -6,7 +6,7 @@ This guide explains the automation system I created for SFT-Play, what each file
 
 ### 1. `Makefile` - Command Automation Hub
 
-**What it does:** Provides simple commands to automate the entire SFT workflow.
+**What it does:** Provides simple commands to automate the entire SFT workflow with backend-specific optimizations.
 
 **Key commands:**
 ```bash
@@ -16,8 +16,10 @@ make setup-dirs     # Creates all necessary directories with .gitkeep files
 make process        # Processes raw data to structured chat format
 make style          # Applies style prompts to all data splits
 make render         # Renders chat templates to seq2seq format
-make train          # Starts training with current config
-make train-with-tb  # Starts training with TensorBoard monitoring
+make train-bnb      # Starts training with BitsAndBytes backend
+make train-unsloth  # Starts training with Unsloth backend (auto-fallback)
+make train-bnb-tb   # BitsAndBytes with TensorBoard
+make train-unsloth-tb # Unsloth with TensorBoard (auto-fallback)
 make eval           # Runs evaluation on trained model
 make eval-test      # Evaluates on test set
 make eval-quick     # Quick evaluation (200 samples)
@@ -39,10 +41,11 @@ make train CONFIG=configs/your_config.yaml
 ```
 
 **How it works:**
-- Uses variables: `CONFIG` (default: configs/config_run.yaml), `STYLE` (default style prompt)
-- Auto-detects if `uv` is available, falls back to `pip`
-- Handles error checking and dependencies between steps
-- Creates demo inputs automatically if they don't exist
+- **Backend-specific commands**: `train-bnb` and `train-unsloth` use optimized configs
+- **XFormers safety**: `train-unsloth` automatically disables XFormers
+- **Auto-detection**: `install` command auto-detects `uv` or `pip`
+- **Error handling**: Validates file existence and dependencies
+- **Variable support**: `CONFIG` and `STYLE` for customization
 
 ### 2. `workflows/quick_start.sh` - Interactive Setup Script
 
@@ -182,10 +185,10 @@ make install
 make setup-dirs
 make process
 make style STYLE="Answer in 2 lines maximum"
-make train
+make train-bnb
 make eval
 ```
-**Result:** Granular control over each step
+**Result:** Granular control over each step with the stable BitsAndBytes backend
 
 ### Scenario 3: Custom Configuration
 ```bash
@@ -206,9 +209,41 @@ make eval CONFIG=configs/my_qlora_config.yaml
 ```bash
 make clean
 make full-pipeline
-make train
+make train-bnb
 ```
 **Result:** Fresh start with clean data processing
+
+### Scenario 6: Backend-Specific Training
+```bash
+# For maximum stability
+make train-bnb-tb
+
+# For speed (with automatic fallback)
+make train-unsloth-tb
+```
+**Result:** Backend-specific training with TensorBoard monitoring
+
+## 🛡️ Safety Features in Automation
+
+### 1. Backend Stamping
+- **What it does**: Creates `outputs/<run>/backend.json` to track backend and precision
+- **Why it's important**: Prevents accidental resume across different backends
+- **How it works**: `train.py` script validates this file on resume
+
+### 2. XFormers Safety
+- **What it does**: Automatically disables XFormers when using Unsloth
+- **Why it's important**: Prevents `NotImplementedError` on incompatible systems
+- **How it works**: `Makefile` and `train.py` set environment variables
+
+### 3. Automatic Fallback
+- **What it does**: Switches from Unsloth to BitsAndBytes if issues are detected
+- **Why it's important**: Ensures training always works, even with compatibility issues
+- **How it works**: `train.py` script handles the fallback with clear warnings
+
+### 4. Precision Validation
+- **What it does**: Ensures only one precision type (bf16 or fp16) is enabled
+- **Why it's important**: Prevents configuration conflicts and errors
+- **How it works**: `train.py` script validates and auto-detects optimal settings
 
 ## 🎯 What Each Automation Solves
 
