@@ -13,7 +13,7 @@ tuning:
   backend: bnb         # BitsAndBytes backend
   lora:
     r: 32
-    alpha: 32
+    alpha: 64
     dropout: 0.05
     target_modules: auto
 

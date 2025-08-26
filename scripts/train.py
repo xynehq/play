@@ -98,19 +98,44 @@ class Collator:
         self.tok = tokenizer
         self.max_len = max_len
         self.model_type = model_type
-        self.template = Template(Path(template_path).read_text())
+        # Load template if it exists, otherwise we'll handle rendered format
+        self.template = None
+        if template_path and Path(template_path).exists():
+            self.template = Template(Path(template_path).read_text())
 
     def __call__(self, batch: List[Dict[str,Any]]):
-        # Render inputs with Jinja
         inputs = []
         targets = []
+        
+        # Auto-detect data format and handle both processed and rendered formats
         for row in batch:
-            sys_txt = (row.get("system") or "").strip()
-            user_txt = row["user"].strip()
-            asst_txt = row["assistant"].strip()
-            rendered = self.template.render(system=sys_txt, user=user_txt).strip()
-            inputs.append(rendered)
-            targets.append(asst_txt)
+            if "input" in row and "target" in row:
+                # Rendered format: {input: "...", target: "..."}
+                inputs.append(row["input"].strip())
+                targets.append(row["target"].strip())
+            elif "user" in row and "assistant" in row:
+                # Processed format: {system: "...", user: "...", assistant: "..."}
+                if self.template:
+                    # Apply template if available
+                    sys_txt = (row.get("system") or "").strip()
+                    user_txt = row["user"].strip()
+                    asst_txt = row["assistant"].strip()
+                    rendered = self.template.render(system=sys_txt, user=user_txt).strip()
+                    inputs.append(rendered)
+                    targets.append(asst_txt)
+                else:
+                    # No template - create simple format
+                    sys_txt = (row.get("system") or "").strip()
+                    user_txt = row["user"].strip()
+                    asst_txt = row["assistant"].strip()
+                    if sys_txt:
+                        simple_input = f"System: {sys_txt}\nUser: {user_txt}\nAssistant:"
+                    else:
+                        simple_input = f"User: {user_txt}\nAssistant:"
+                    inputs.append(simple_input)
+                    targets.append(asst_txt)
+            else:
+                raise ValueError(f"Unsupported data format. Expected either {{input, target}} or {{user, assistant}} format. Got: {list(row.keys())}")
 
         if self.model_type == "seq2seq":
             model_inputs = self.tok(inputs, max_length=self.max_len, truncation=True, padding=True)

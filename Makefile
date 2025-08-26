@@ -1,7 +1,7 @@
 .PHONY: help install process style render train train-with-tb stop-tb tensorboard tb tb-stop tb-clean tb-open train-and-watch eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model print-python
 
 # Default config file
-CONFIG ?= configs/config_run.yaml
+CONFIG ?= configs/run_bnb.yaml
 
 # Style prompt (can be overridden)
 STYLE ?= "Answer concisely in 2 lines. No markdown. If unsure, say 'Not sure'."
@@ -55,7 +55,7 @@ help:
 	@echo "  full-pipeline Run complete data processing pipeline"
 	@echo ""
 	@echo "Variables:"
-	@echo "  CONFIG=path   Specify config file (default: configs/config_run.yaml)"
+	@echo "  CONFIG=path   Specify config file (default: configs/run_bnb.yaml)"
 	@echo "  STYLE=text    Specify style prompt for style command"
 
 print-python:
