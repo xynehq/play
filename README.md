@@ -655,6 +655,14 @@ That's ~95% growth in ROUGE-L and +15 points in SARI in just 10 minutes! Even wi
 
 **Proof that fine-tuning isn't just for labs — you can try it in a few minutes on consumer GPUs.**
 
+#### 📊 Metric Improvements (Visual Proof)
+
+**ROUGE-L Score Improvement:**
+![ROUGE-L Results](results/Rouge-L.png)
+
+**SARI Score Improvement:**
+![SARI Results](results/SARI.png)
+
 ### Usage Examples
 
 **Complete beginner workflow:**
