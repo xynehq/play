@@ -48,9 +48,15 @@ This document provides a comprehensive overview of the complete project setup an
    - Separate output directory (outputs/run-unsloth)
    - XFormers compatibility handling
 
-7. **`configs/config_run.yaml`** - Legacy/custom configuration
-   - Maintained for backward compatibility
-   - User customization template
+7. **`configs/run_bnb.yaml`** - BitsAndBytes backend configuration (default)
+   - Optimized for stability and broad compatibility
+   - Uses fp16 precision for maximum compatibility
+   - Default configuration used by Makefile
+
+8. **`configs/run_unsloth.yaml`** - Unsloth backend configuration (optional)
+   - Optimized for speed with automatic fallback
+   - Uses bf16 precision for better performance
+   - Requires compatible CUDA setup
 
 ### Enhanced Training System
 

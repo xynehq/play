@@ -24,7 +24,7 @@ Single config, QLoRA/LoRA/Full switches, bitsandbytes/Unsloth backends, Jinja ch
 ## ✨ Features
 
 * **Runs on any single GPU (8 GB+)** — VRAM probe auto-tunes batch/grad-accum.
-* **Two-config UX** — `config_base.yaml` (defaults) + `config_run.yaml` (you edit).
+* **Two-config UX** — `config_base.yaml` (defaults) + backend-specific configs (`run_bnb.yaml`, `run_unsloth.yaml`).
 * **Tuning modes** — `qlora | lora | full` (config switch).
 * **Backends** — `bitsandbytes` (default) or `unsloth` (optional; auto-fallback to bnb).
 * **Data pipeline** — raw → structured chat (`system,user,assistant`) → Jinja render on-the-fly.
@@ -41,7 +41,8 @@ Single config, QLoRA/LoRA/Full switches, bitsandbytes/Unsloth backends, Jinja ch
 sft-play/
 ├─ configs/
 │  ├─ config_base.yaml          # reusable defaults (rarely change)
-│  └─ config_run.yaml           # per-run overrides (you edit)
+│  ├─ run_bnb.yaml              # BitsAndBytes backend config (default)
+│  └─ run_unsloth.yaml          # Unsloth backend config (optional)
 ├─ data/
 │  ├─ raw/                      # input sources (json/csv/jsonl)
 │  ├─ processed/                # structured chat (system,user,assistant)
@@ -114,37 +115,36 @@ train:
   output_dir: outputs/run-unsloth
 ```
 
-### `configs/config_run.yaml` (legacy/custom)
+### Data Format Support
 
+The training script supports **both processed and rendered data formats**:
+
+**Processed Format (Default):**
+```json
+{"system": "You are a helpful assistant.", "user": "What is 2+2?", "assistant": "2+2 equals 4."}
+```
+
+**Rendered Format (Optional):**
+```json
+{"input": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant", "target": "2+2 equals 4."}
+```
+
+**To switch to rendered data:**
+1. Generate rendered data: `make render`
+2. Create config pointing to rendered paths:
 ```yaml
-include: configs/config_base.yaml
-
-model:
-  name: Qwen/Qwen2.5-3B-Instruct     # HF repo_id OR local folder path
-  local_dir: models/qwen2.5-3b       # where to store/download the model
-  revision: main                     # optional: tag/sha
-  trust_remote_code: true            # some repos need this
-  type: causal
-  max_seq_len: 512
-
-tuning:
-  mode: qlora               # qlora | lora | full
-  backend: bnb              # bnb | unsloth
-  lora:
-    r: 32
-    alpha: 32
-    dropout: 0.05
-    target_modules: auto
-
 data:
-  train_path: data/processed/train.jsonl
-  val_path:   data/processed/val.jsonl
-  test_path:  data/processed/test.jsonl
+  train_path: data/rendered/train.jsonl
+  val_path:   data/rendered/val.jsonl
+  test_path:  data/rendered/test.jsonl
+```
 
-gen:
-  max_new_tokens: 200
-  temperature: 0.2
-  top_p: 0.9
+**Fallback behavior when no chat template:**
+If `chat_templates/default.jinja` is missing, the system automatically creates simple format:
+```
+System: You are a helpful assistant.
+User: What is 2+2?
+Assistant:2+2 equals 4.
 ```
 
 ### Backend Safety Features
@@ -194,7 +194,13 @@ To download models from the Hugging Face Hub, you need to provide an access toke
 
 We log to a fixed path: `outputs/tb`.
 
-Start it:
+**Automatic TensorBoard (Recommended):**
+```bash
+make train-bnb-tb           # BitsAndBytes training with TensorBoard auto-start
+make train-unsloth-tb       # Unsloth training with TensorBoard auto-start
+```
+
+**Manual TensorBoard:**
 ```bash
 make tensorboard            # uses port 6006
 make tensorboard TB_PORT=6007
@@ -204,6 +210,12 @@ Stop it:
 ```bash
 make tb-stop
 ```
+
+**How it works:**
+- The `-tb` training targets automatically start TensorBoard in the background before training
+- TensorBoard runs on port 6006 by default (configurable with TB_PORT)
+- After training completes, TensorBoard continues running for you to review results
+- Use `make tb-stop` to stop TensorBoard when you're done
 
 If TB shows "No dashboards…" check you're pointing at the absolute path:
 ```bash
@@ -288,18 +300,18 @@ Create `data/raw/raw.jsonl` or `raw.json`. Example (JSONL):
 #### 2) Process raw → structured chat
 
 ```bash
-python scripts/process_data.py --config configs/config_run.yaml --raw_path data/raw/raw.jsonl
+python scripts/process_data.py --config configs/run_bnb.yaml --raw_path data/raw/raw.jsonl
 # writes data/processed/{train,val,test}.jsonl
 ```
 
 #### 3) (Optional) Inject style/system rule
 
 ```bash
-python scripts/style_prompt.py --config configs/config_run.yaml \
+python scripts/style_prompt.py --config configs/run_bnb.yaml \
   --style "Answer in ≤2 concise sentences. No markdown." \
   --in data/processed/train.jsonl \
   --out data/processed_with_style/train.jsonl
-# repeat for val/test if desired and update config_run.yaml data paths
+# repeat for val/test if desired and update config data paths
 ```
 
 #### 4) Validate setup
@@ -311,7 +323,7 @@ make check                   # Comprehensive sanity check
 #### 5) Train (TensorBoard logs)
 
 ```bash
-python scripts/train.py --config configs/config_run.yaml
+python scripts/train.py --config configs/run_bnb.yaml
 tensorboard --logdir outputs/
 ```
 
@@ -321,7 +333,7 @@ tensorboard --logdir outputs/
 #### 6) Evaluate
 
 ```bash
-python scripts/eval.py --config configs/config_run.yaml --split val
+python scripts/eval.py --config configs/run_bnb.yaml --split val
 # writes outputs/metrics.json and outputs/samples.jsonl
 ```
 
@@ -330,14 +342,14 @@ python scripts/eval.py --config configs/config_run.yaml --split val
 Interactive:
 
 ```bash
-python scripts/infer.py --config configs/config_run.yaml
+python scripts/infer.py --config configs/run_bnb.yaml
 ```
 
 Batch:
 
 ```bash
 echo "Explain QLoRA in two lines." > demo_inputs.txt
-python scripts/infer.py --config configs/config_run.yaml --mode batch --input_file demo_inputs.txt --output_file outputs/preds.txt
+python scripts/infer.py --config configs/run_bnb.yaml --mode batch --input_file demo_inputs.txt --output_file outputs/preds.txt
 ```
 
 ##### Inference Quality Improvements
@@ -380,7 +392,7 @@ These improvements ensure that:
 #### 8) (Optional) Merge adapters → FP16 model
 
 ```bash
-python scripts/merge_lora.py --config configs/config_run.yaml \
+python scripts/merge_lora.py --config configs/run_bnb.yaml \
   --adapters adapters/last \
   --out outputs/merged_fp16 \
   --dtype fp16
@@ -496,25 +508,29 @@ make process && make style && make train
 
 * **Backend Switching: BitsAndBytes ↔ Unsloth**
 
-  **To switch from BitsAndBytes to Unsloth:**
+  **Use the provided backend-specific configs:**
+  ```bash
+  # For BitsAndBytes (stable, broad compatibility)
+  make train CONFIG=configs/run_bnb.yaml
+  
+  # For Unsloth (faster, requires compatible CUDA)
+  make train CONFIG=configs/run_unsloth.yaml
+  ```
+
+  **Or create custom config:**
   ```yaml
-  # In configs/config_run.yaml
+  # For Unsloth backend
+  include: configs/config_base.yaml
   tuning:
     backend: unsloth
-  
-  # In configs/config_base.yaml
   train:
     bf16: true    # Unsloth works better with bfloat16
     fp16: false
-  ```
-
-  **To switch from Unsloth to BitsAndBytes:**
-  ```yaml
-  # In configs/config_run.yaml
+  
+  # For BitsAndBytes backend  
+  include: configs/config_base.yaml
   tuning:
     backend: bnb
-  
-  # In configs/config_base.yaml
   train:
     bf16: false   # BitsAndBytes is more stable with float16
     fp16: true
@@ -593,7 +609,7 @@ make process && make style && make train
 * **Before training, always validate your config:**
   ```bash
   make check                    # Comprehensive validation
-  python scripts/train.py --config configs/config_run.yaml --help  # Check arguments
+  python scripts/train.py --config configs/run_bnb.yaml --help  # Check arguments
   ```
 
 * **Common config mistakes:**

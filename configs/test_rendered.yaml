@@ -1,0 +1,33 @@
+include: configs/config_base.yaml
+
+model:
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  local_dir: models/qwen2.5-3b
+  revision: main
+  trust_remote_code: true
+  type: causal
+  max_seq_len: 512
+
+tuning:
+  mode: qlora
+  backend: bnb
+  lora:
+    r: 32
+    alpha: 64
+    dropout: 0.05
+    target_modules: auto
+
+train:
+  bf16: false
+  fp16: true
+  output_dir: outputs/test-rendered
+  evaluation_strategy: steps
+  save_strategy: steps
+  eval_steps: 1
+  save_steps: 10
+
+data:
+  train_path: data/rendered/train.jsonl
+  val_path:   data/rendered/val.jsonl
+  test_path:  data/rendered/test.jsonl
+  cache_dir: data/cache

@@ -161,17 +161,29 @@ train-with-tb:
 
 train-bnb-tb:
 	@echo "Starting BitsAndBytes training with TensorBoard..."
+	@mkdir -p outputs/tb
+	@pkill -f tensorboard || true
+	@nohup tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0 >/dev/null 2>&1 &
+	@sleep 2
+	@echo "📈 TensorBoard started at http://localhost:$(TB_PORT)"
 	PYTHONPATH=. python scripts/train.py --config configs/run_bnb.yaml
 	@echo ""
-	@echo "✅ Training finished. To view logs:"
-	@echo "   make tensorboard TB_PORT=$(TB_PORT)"
+	@echo "✅ Training finished. TensorBoard is still running at:"
+	@echo "   http://localhost:$(TB_PORT)"
+	@echo "   To stop TensorBoard: make tb-stop"
 
 train-unsloth-tb:
 	@echo "Starting Unsloth training with TensorBoard..."
+	@mkdir -p outputs/tb
+	@pkill -f tensorboard || true
+	@nohup tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0 >/dev/null 2>&1 &
+	@sleep 2
+	@echo "📈 TensorBoard started at http://localhost:$(TB_PORT)"
 	XFORMERS_DISABLED=1 UNSLOTH_DISABLE_FAST_ATTENTION=1 PYTHONPATH=. python scripts/train.py --config configs/run_unsloth.yaml
 	@echo ""
-	@echo "✅ Training finished. To view logs:"
-	@echo "   make tensorboard TB_PORT=$(TB_PORT)"
+	@echo "✅ Training finished. TensorBoard is still running at:"
+	@echo "   http://localhost:$(TB_PORT)"
+	@echo "   To stop TensorBoard: make tb-stop"
 
 ## train-and-watch: Start TB (bg) then train
 train-and-watch:

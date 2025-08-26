@@ -16,10 +16,11 @@ make setup-dirs     # Creates all necessary directories with .gitkeep files
 make process        # Processes raw data to structured chat format
 make style          # Applies style prompts to all data splits
 make render         # Renders chat templates to seq2seq format
+make train          # Starts training with default config (run_bnb.yaml)
 make train-bnb      # Starts training with BitsAndBytes backend
 make train-unsloth  # Starts training with Unsloth backend (auto-fallback)
-make train-bnb-tb   # BitsAndBytes with TensorBoard
-make train-unsloth-tb # Unsloth with TensorBoard (auto-fallback)
+make train-bnb-tb   # BitsAndBytes with TensorBoard (auto-start)
+make train-unsloth-tb # Unsloth with TensorBoard (auto-start + auto-fallback)
 make eval           # Runs evaluation on trained model
 make eval-test      # Evaluates on test set
 make eval-quick     # Quick evaluation (200 samples)
@@ -37,7 +38,8 @@ make full-pipeline  # Runs complete data processing (process + style + render)
 **Customization:**
 ```bash
 make style STYLE="Your custom style prompt"
-make train CONFIG=configs/your_config.yaml
+make train CONFIG=configs/run_unsloth.yaml  # Switch to Unsloth backend
+make train CONFIG=configs/my_custom.yaml    # Use custom config
 ```
 
 **How it works:**
@@ -98,11 +100,11 @@ make train CONFIG=configs/your_config.yaml
 **Example workflow it automates:**
 ```bash
 # Process dataset1 with style1
-python scripts/process_data.py --config configs/config_run.yaml --raw_path data/raw/dataset1.jsonl
+python scripts/process_data.py --config configs/run_bnb.yaml --raw_path data/raw/dataset1.jsonl
 python scripts/style_prompt.py --style "Style 1" --in data/processed/train.jsonl --out data/processed_with_style_dataset1/train.jsonl
 
 # Process dataset2 with style2  
-python scripts/process_data.py --config configs/config_run.yaml --raw_path data/raw/dataset2.jsonl
+python scripts/process_data.py --config configs/run_bnb.yaml --raw_path data/raw/dataset2.jsonl
 python scripts/style_prompt.py --style "Style 2" --in data/processed/train.jsonl --out data/processed_with_style_dataset2/train.jsonl
 
 # Run experiments
@@ -245,6 +247,16 @@ make train-unsloth-tb
 - **Why it's important**: Prevents configuration conflicts and errors
 - **How it works**: `train.py` script validates and auto-detects optimal settings
 
+### 5. TensorBoard Auto-Start
+- **What it does**: Automatically starts TensorBoard before training in `-tb` targets
+- **Why it's important**: Previously users had to manually start TensorBoard after training
+- **How it works**: 
+  - `make train-bnb-tb` and `make train-unsloth-tb` now start TensorBoard automatically
+  - TensorBoard runs in background on port 6006 (configurable)
+  - Training proceeds with live monitoring available
+  - TensorBoard continues running after training for result review
+- **User experience**: One command gives you training + live monitoring
+
 ## 🎯 What Each Automation Solves
 
 ### Before Automation:
@@ -252,13 +264,13 @@ make train-unsloth-tb
 # Manual process (what users had to do)
 mkdir -p data/raw data/processed data/processed_with_style data/rendered outputs adapters
 pip install -r requirements.txt
-python scripts/process_data.py --config configs/config_run.yaml
-python scripts/style_prompt.py --config configs/config_run.yaml --style "..." --in data/processed/train.jsonl --out data/processed_with_style/train.jsonl
-python scripts/style_prompt.py --config configs/config_run.yaml --style "..." --in data/processed/val.jsonl --out data/processed_with_style/val.jsonl
-python scripts/style_prompt.py --config configs/config_run.yaml --style "..." --in data/processed/test.jsonl --out data/processed_with_style/test.jsonl
-python scripts/render_template.py --config configs/config_run.yaml --in data/processed_with_style/train.jsonl --out data/rendered/train.jsonl
+python scripts/process_data.py --config configs/run_bnb.yaml
+python scripts/style_prompt.py --config configs/run_bnb.yaml --style "..." --in data/processed/train.jsonl --out data/processed_with_style/train.jsonl
+python scripts/style_prompt.py --config configs/run_bnb.yaml --style "..." --in data/processed/val.jsonl --out data/processed_with_style/val.jsonl
+python scripts/style_prompt.py --config configs/run_bnb.yaml --style "..." --in data/processed/test.jsonl --out data/processed_with_style/test.jsonl
+python scripts/render_template.py --config configs/run_bnb.yaml --in data/processed_with_style/train.jsonl --out data/rendered/train.jsonl
 # ... repeat for val and test
-python scripts/train.py --config configs/config_run.yaml
+python scripts/train.py --config configs/run_bnb.yaml
 ```
 
 ### After Automation:
