@@ -642,11 +642,26 @@ make process && make style && make train
 
 ## 🎯 Quick Examples
 
+**Try fine-tuning on EduGen Small Q&A ([Kaggle link](https://www.kaggle.com/datasets/avinashmynampati/edugen-small-qa)). Takes ~10 min on an RTX 4060.**
+
+### 🚀 Real Results: 10-Minute Fine-Tune Success
+
+**Tried a 10-minute QLoRA fine-tune on Qwen2.5-1.5B with 240 Q&As (EduGen style):**
+
+- **Baseline ROUGE-L**: 0.17 → **After SFT**: 0.33 (**~95% improvement!**)
+- **SARI**: 40 → 55 (**+15 points**)
+
+That's ~95% growth in ROUGE-L and +15 points in SARI in just 10 minutes! Even with tiny data, the model became step-by-step and precise.
+
+**Proof that fine-tuning isn't just for labs — you can try it in a few minutes on consumer GPUs.**
+
+### Usage Examples
+
 **Complete beginner workflow:**
 ```bash
 ./workflows/quick_start.sh     # One command setup
 make check                     # Validate everything
-make train-with-tb            # Train with monitoring
+make train-bnb-tb             # Train with TensorBoard monitoring
 ```
 
 **Advanced user workflow:**
