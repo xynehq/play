@@ -18,3 +18,4 @@ scikit-learn
 unsloth
 tf-keras
 sacremoses
+python-docx

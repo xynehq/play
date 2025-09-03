@@ -1,6 +1,16 @@
 seed: 42
 run_name: run-01
 
+# WHAT we train
+mode: sft               # allowed: sft | cpt | cpt_mixed
+
+# Packing for CPT/DAPT (safe defaults; ignored by sft mode)
+block_size: 2048
+pack_factor: 4
+
+# Optional multi-dataset list used when mode=cpt_mixed
+datasets: []            # e.g. defined in run_dapt.yaml
+
 train:
   epochs: 3
   learning_rate: 2e-4

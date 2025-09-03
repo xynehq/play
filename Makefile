@@ -1,4 +1,4 @@
-.PHONY: help install process style render train train-with-tb stop-tb tensorboard tb tb-stop tb-clean tb-open train-and-watch eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model print-python
+.PHONY: help install process style render train train-with-tb stop-tb tensorboard tb tb-stop tb-clean tb-open train-and-watch eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model print-python dapt-docx dapt-train
 
 # Default config file
 CONFIG ?= configs/run_bnb.yaml
@@ -357,3 +357,12 @@ full-pipeline: setup-dirs process style render
 	@echo "  2. Run 'make check' to validate setup"
 	@echo "  3. Run 'make train' to start training"
 	@echo "  4. Run 'make eval' to evaluate the model"
+
+# DAPT (Domain-Adaptive Pretraining) targets
+dapt-docx:
+	@echo "Processing DOCX files for DAPT..."
+	python scripts/ingest_docx.py
+
+dapt-train:
+	@echo "Starting DAPT training..."
+	PYTHONPATH=. python scripts/train.py --config configs/run_dapt.yaml

@@ -18,6 +18,9 @@ from transformers.trainer_utils import get_last_checkpoint
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from jinja2 import Template
 from scripts.utils.model_store import prepare_local_model_dir
+from scripts.datasets_cpt import load_cpt_dataset, load_chat_dataset_for_cpt
+from scripts.collators_cpt import DataCollatorForCausalPairs
+from datasets import interleave_datasets
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -192,6 +195,44 @@ class Collator:
                     "attention_mask": torch.tensor(attention_mask),
                     "labels": torch.tensor(labels)}
 
+# ---------- CPT/DAPT dataset builder ----------
+def build_cpt_or_mixed(cfg, tokenizer):
+    """Build CPT, mixed, or return None for SFT mode."""
+    mode = cfg.get("mode", "sft")
+    if mode == "cpt":
+        # Pure CPT mode - single dataset
+        cpt_path = cfg["datasets"][0]["path"]
+        block_size = cfg.get("block_size", 2048)
+        pack_factor = cfg.get("pack_factor", 4)
+        cpt = load_cpt_dataset(cpt_path, tokenizer, block_size=block_size, pack_factor=pack_factor)
+        return cpt, DataCollatorForCausalPairs(tokenizer)
+    elif mode == "cpt_mixed":
+        # Mixed CPT + anchor mode
+        datasets_list = []
+        weights = []
+        block_size = cfg.get("block_size", 2048)
+        pack_factor = cfg.get("pack_factor", 4)
+        
+        for ds_cfg in cfg["datasets"]:
+            if ds_cfg["type"] == "cpt":
+                ds = load_cpt_dataset(ds_cfg["path"], tokenizer, block_size=block_size, pack_factor=pack_factor)
+            elif ds_cfg["type"] == "chat":
+                ds = load_chat_dataset_for_cpt(ds_cfg["path"], tokenizer, block_size=block_size)
+            else:
+                raise ValueError(f"Unknown dataset type: {ds_cfg['type']}")
+            
+            datasets_list.append(ds)
+            weights.append(ds_cfg.get("weight", 1.0))
+        
+        # Normalize weights
+        total_weight = sum(weights)
+        weights = [w / total_weight for w in weights]
+        
+        mixed = interleave_datasets(datasets_list, probabilities=weights, seed=cfg.get("seed", 42))
+        return mixed, DataCollatorForCausalPairs(tokenizer)
+    else:
+        return None, None  # SFT path uses existing code
+
 # ---------- Metric: ROUGE-L (simple) ----------
 def compute_metrics(tokenizer):
     def _fn(eval_pred):
@@ -289,27 +330,37 @@ def main():
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token if tok.eos_token else "<|pad|>"
 
-    # datasets (structured chat)
-    paths = cfg["data"]
+    # Branch by mode: sft vs cpt vs cpt_mixed
+    ds_train, ds_val, data_collator = None, None, None
     
-    # Check if data files exist
-    train_path = paths["train_path"]
-    val_path = paths["val_path"]
-    template_path = cfg["data"]["template_path"]
-    
-    if not os.path.exists(train_path):
-        raise FileNotFoundError(f"Training data not found: {train_path}")
-    if not os.path.exists(val_path):
-        raise FileNotFoundError(f"Validation data not found: {val_path}")
-    if not os.path.exists(template_path):
-        raise FileNotFoundError(f"Template file not found: {template_path}")
-    
-    ds_train = ChatDataset(train_path)
-    ds_val = ChatDataset(val_path)
-    
-    print(f"[train] Loaded {len(ds_train)} training samples, {len(ds_val)} validation samples")
-
-    collator = Collator(tok, template_path, max_len, model_type)
+    cpt_ds, cpt_collator = build_cpt_or_mixed(cfg, tok)
+    if cfg.get("mode", "sft") in ("cpt", "cpt_mixed"):
+        # CPT/DAPT mode
+        print(f"[train] Using {cfg.get('mode')} mode with {len(cpt_ds)} samples")
+        ds_train = cpt_ds
+        ds_val = None  # CPT typically doesn't use validation during training
+        data_collator = cpt_collator
+    else:
+        # SFT mode (existing path)
+        paths = cfg["data"]
+        
+        # Check if data files exist
+        train_path = paths["train_path"]
+        val_path = paths["val_path"]
+        template_path = cfg["data"]["template_path"]
+        
+        if not os.path.exists(train_path):
+            raise FileNotFoundError(f"Training data not found: {train_path}")
+        if not os.path.exists(val_path):
+            raise FileNotFoundError(f"Validation data not found: {val_path}")
+        if not os.path.exists(template_path):
+            raise FileNotFoundError(f"Template file not found: {template_path}")
+        
+        ds_train = ChatDataset(train_path)
+        ds_val = ChatDataset(val_path)
+        
+        print(f"[train] SFT mode: Loaded {len(ds_train)} training samples, {len(ds_val)} validation samples")
+        data_collator = Collator(tok, template_path, max_len, model_type)
 
     # backend & model load
     backend = cfg["tuning"]["backend"]         # "bnb" | "unsloth"
@@ -445,8 +496,8 @@ def main():
 
     args_tr = transformers.TrainingArguments(**ta_kwargs)
 
-    # Always use our custom collator (it handles both causal & seq2seq)
-    data_collator = collator
+    # Use the appropriate data collator (already set above)
+    # data_collator is either Collator (SFT) or DataCollatorForCausalPairs (CPT)
 
     # Resume if checkpoint present
     last_ckpt = get_last_checkpoint(outdir) if os.path.isdir(outdir) else None

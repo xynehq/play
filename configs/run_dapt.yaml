@@ -1,0 +1,57 @@
+include: configs/config_base.yaml
+
+task_mode: cpt_mixed                  # sft | cpt | cpt_mixed
+
+model:
+  name: google/gemma-3-27b-it
+  max_seq_len: 2048
+  trust_remote_code: true
+  type: causal
+
+tuning:
+  mode: qlora                         # existing plumbing
+  backend: bnb
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules: [q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj]
+
+# Packing knobs used by CPT
+block_size: 2048
+pack_factor: 4
+
+# Mix CPT + anchor at train-time
+datasets:
+  - name: dpip_cpt
+    path: data/processed/dpip_cpt.jsonl
+    type: cpt
+    weight: 0.9
+  - name: anchor_instr
+    path: data/processed/anchor_instr.jsonl
+    type: chat
+    weight: 0.1
+
+train:
+  epochs: 1
+  learning_rate: 1.0e-4
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  gradient_checkpointing: true
+  bf16: true
+  fp16: false
+  batch_size: auto
+  grad_accum: auto
+  evaluation_strategy: "no"
+  logging_steps: 25
+  save_steps: 500
+  output_dir: outputs/run-dapt
+
+data:
+  # SFT-only fields (kept for backward-compat)
+  format: chat
+  template_path: chat_templates/default.jinja
+  train_path: data/processed/train.jsonl
+  val_path:   data/processed/val.jsonl
+  test_path:  data/processed/test.jsonl
+  cache_dir:  data/cache
