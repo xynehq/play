@@ -29,7 +29,7 @@ train:
   # logging / eval / save
   logging_steps: 1                    # see frequent logs in TB
   evaluation_strategy: steps          # HF name in 4.55 is evaluation_strategy
-  eval_steps: 1                       # tiny dataset -> evaluate every step
+  eval_steps: 10                      # evaluate every 10 steps to avoid OOM
   save_strategy: steps
   save_steps: 10                      # save periodically without spamming
   save_total_limit: 3

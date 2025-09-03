@@ -110,7 +110,7 @@ class Collator:
         inputs = []
         targets = []
         
-        # Auto-detect data format and handle both processed and rendered formats
+        # Auto-detect data format and handle multiple formats
         for row in batch:
             if "input" in row and "target" in row:
                 # Rendered format: {input: "...", target: "..."}
@@ -137,8 +137,40 @@ class Collator:
                         simple_input = f"User: {user_txt}\nAssistant:"
                     inputs.append(simple_input)
                     targets.append(asst_txt)
+            elif "messages" in row:
+                # Messages format: {messages: [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
+                messages = row["messages"]
+                user_msg = None
+                assistant_msg = None
+                system_msg = None
+                
+                for msg in messages:
+                    if msg["role"] == "user":
+                        user_msg = msg["content"]
+                    elif msg["role"] == "assistant":
+                        assistant_msg = msg["content"]
+                    elif msg["role"] == "system":
+                        system_msg = msg["content"]
+                
+                if user_msg and assistant_msg:
+                    if self.template:
+                        # Apply template if available
+                        sys_txt = (system_msg or "").strip()
+                        rendered = self.template.render(system=sys_txt, user=user_msg).strip()
+                        inputs.append(rendered)
+                        targets.append(assistant_msg)
+                    else:
+                        # No template - create simple format
+                        if system_msg:
+                            simple_input = f"System: {system_msg}\nUser: {user_msg}\nAssistant:"
+                        else:
+                            simple_input = f"User: {user_msg}\nAssistant:"
+                        inputs.append(simple_input)
+                        targets.append(assistant_msg)
+                else:
+                    raise ValueError(f"Messages format missing user or assistant message: {messages}")
             else:
-                raise ValueError(f"Unsupported data format. Expected either {{input, target}} or {{user, assistant}} format. Got: {list(row.keys())}")
+                raise ValueError(f"Unsupported data format. Expected {{input, target}}, {{user, assistant}}, or {{messages}} format. Got: {list(row.keys())}")
 
         if self.model_type == "seq2seq":
             model_inputs = self.tok(inputs, max_length=self.max_len, truncation=True, padding=True)
@@ -198,7 +230,7 @@ class Collator:
 # ---------- CPT/DAPT dataset builder ----------
 def build_cpt_or_mixed(cfg, tokenizer):
     """Build CPT, mixed, or return None for SFT mode."""
-    mode = cfg.get("mode", "sft")
+    mode = cfg.get("task_mode", "sft")
     if mode == "cpt":
         # Pure CPT mode - single dataset
         cpt_path = cfg["datasets"][0]["path"]
@@ -334,9 +366,9 @@ def main():
     ds_train, ds_val, data_collator = None, None, None
     
     cpt_ds, cpt_collator = build_cpt_or_mixed(cfg, tok)
-    if cfg.get("mode", "sft") in ("cpt", "cpt_mixed"):
+    if cfg.get("task_mode", "sft") in ("cpt", "cpt_mixed"):
         # CPT/DAPT mode
-        print(f"[train] Using {cfg.get('mode')} mode with {len(cpt_ds)} samples")
+        print(f"[train] Using {cfg.get('task_mode')} mode with {len(cpt_ds)} samples")
         ds_train = cpt_ds
         ds_val = None  # CPT typically doesn't use validation during training
         data_collator = cpt_collator

@@ -1,4 +1,4 @@
-.PHONY: help install process style render train train-with-tb stop-tb tensorboard tb tb-stop tb-clean tb-open train-and-watch eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model print-python dapt-docx dapt-train
+.PHONY: help install process style render train train-with-tb stop-tb tensorboard tb tb-stop tb-clean tb-open train-and-watch eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model print-python dapt-docx dapt-train test test-unit test-integration test-coverage test-fast
 
 # Default config file
 CONFIG ?= configs/run_bnb.yaml
@@ -366,3 +366,32 @@ dapt-docx:
 dapt-train:
 	@echo "Starting DAPT training..."
 	PYTHONPATH=. python scripts/train.py --config configs/run_dapt.yaml
+
+# Testing targets
+test:
+	@echo "Running all tests..."
+	pytest
+
+test-unit:
+	@echo "Running unit tests..."
+	pytest -m unit
+
+test-integration:
+	@echo "Running integration tests..."
+	pytest -m integration
+
+test-coverage:
+	@echo "Running tests with coverage report..."
+	pytest --cov=scripts --cov-report=html --cov-report=term-missing
+
+test-fast:
+	@echo "Running fast tests (excluding slow tests)..."
+	pytest -m "not slow"
+
+test-commands:
+	@echo "Testing all Makefile commands..."
+	pytest tests/test_commands.py -v
+
+test-configs:
+	@echo "Testing configuration files..."
+	pytest tests/test_configs.py -v

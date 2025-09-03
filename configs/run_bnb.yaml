@@ -23,7 +23,7 @@ train:
   output_dir: outputs/run-bnb
   evaluation_strategy: steps
   save_strategy: steps
-  eval_steps: 1
+  eval_steps: 10
   save_steps: 10
 
 data:

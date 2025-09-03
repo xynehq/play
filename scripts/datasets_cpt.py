@@ -33,31 +33,57 @@ def load_chat_dataset_for_cpt(jsonl_path, tokenizer, block_size=2048):
     """Load chat dataset and prepare for CPT mixing (with proper label masking)."""
     ds = load_dataset("json", data_files=jsonl_path, split="train")
     
-    def build_anchor_prompt(rec):
-        instr = rec.get("instruction", "").strip()
-        inpt = rec.get("input", "").strip()
-        if inpt:
-            return f"[INST] {instr}\n{inpt} [/INST]\n"
-        return f"[INST] {instr} [/INST]\n"
-
     def tok_map(batch):
-        prompts = [build_anchor_prompt(r) for r in batch]
-        outs = [r.get("output", "") for r in batch]
-        
-        prompt_tok = tokenizer(prompts, add_special_tokens=False)
-        out_tok = tokenizer(outs, add_special_tokens=False)
-        
         input_ids, labels = [], []
-        for p_ids, o_ids in zip(prompt_tok["input_ids"], out_tok["input_ids"]):
-            ids = p_ids + o_ids + ([tokenizer.eos_token_id] if tokenizer.eos_token_id is not None else [])
-            lab = [-100]*len(p_ids) + o_ids + ([tokenizer.eos_token_id] if tokenizer.eos_token_id is not None else [])
+        
+        for i in range(len(batch["instruction"])):
+            # Build conversation in chat format
+            instr = batch["instruction"][i].strip()
+            inpt = batch.get("input", [""] * len(batch["instruction"]))[i].strip()
+            output = batch.get("output", [""] * len(batch["instruction"]))[i].strip()
             
-            # Truncate if too long
-            if len(ids) > block_size:
-                ids = ids[:block_size]
-                lab = lab[:block_size]
+            # Create user message
+            user_content = f"{instr}\n{inpt}".strip() if inpt else instr
+            conversation = [
+                {"role": "user", "content": user_content},
+                {"role": "assistant", "content": output}
+            ]
             
-            input_ids.append(ids)
+            # Apply chat template if available
+            if hasattr(tokenizer, 'chat_template') and tokenizer.chat_template:
+                try:
+                    formatted_text = tokenizer.apply_chat_template(
+                        conversation, 
+                        tokenize=False, 
+                        add_generation_prompt=False
+                    )
+                except Exception:
+                    # Fallback to simple format if template fails
+                    formatted_text = f"<|user|>\n{user_content}<|end|>\n<|assistant|>\n{output}<|end|>\n"
+            else:
+                # Fallback format when no chat template
+                formatted_text = f"<|user|>\n{user_content}<|end|>\n<|assistant|>\n{output}<|end|>\n"
+            
+            # Tokenize the full conversation
+            full_tokens = tokenizer(formatted_text, add_special_tokens=True, truncation=True, max_length=block_size)
+            full_ids = full_tokens["input_ids"]
+            
+            # Find where assistant response starts for label masking
+            # Tokenize just the user part to find the boundary
+            user_part = formatted_text.split("<|assistant|>")[0] + "<|assistant|>\n"
+            user_tokens = tokenizer(user_part, add_special_tokens=True)
+            user_len = len(user_tokens["input_ids"])
+            
+            # Create labels: mask user part (-100), supervise assistant part
+            lab = [-100] * user_len + full_ids[user_len:]
+            
+            # Ensure same length
+            if len(lab) > len(full_ids):
+                lab = lab[:len(full_ids)]
+            elif len(lab) < len(full_ids):
+                lab.extend(full_ids[len(lab):])
+            
+            input_ids.append(full_ids)
             labels.append(lab)
         
         return {"input_ids": input_ids, "labels": labels}
