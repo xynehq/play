@@ -1,7 +1,13 @@
 include: configs/config_base.yaml
 
+# Model configuration (required for tests)
+model:
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  type: causal
+
 # BnB-specific overrides
 tuning:
+  mode: qlora          # Required for tests
   backend: bnb         # BitsAndBytes backend
 
 train:

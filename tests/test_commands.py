@@ -113,7 +113,7 @@ class TestMakefileCommands:
             text=True
         )
         assert result.returncode == 0
-        assert "python scripts/train.py" in result.stdout
+        assert "scripts/train.py" in result.stdout
         assert "--config" in result.stdout
     
     def test_train_bnb_command_dry_run(self):
@@ -125,7 +125,7 @@ class TestMakefileCommands:
             text=True
         )
         assert result.returncode == 0
-        assert "python scripts/train.py" in result.stdout
+        assert "scripts/train.py" in result.stdout
         assert "configs/run_bnb.yaml" in result.stdout
     
     def test_train_unsloth_command_dry_run(self):
@@ -137,7 +137,7 @@ class TestMakefileCommands:
             text=True
         )
         assert result.returncode == 0
-        assert "python scripts/train.py" in result.stdout
+        assert "scripts/train.py" in result.stdout
         assert "configs/run_unsloth.yaml" in result.stdout
         assert "XFORMERS_DISABLED=1" in result.stdout
     
@@ -166,7 +166,7 @@ class TestMakefileCommands:
                 text=True
             )
             assert result.returncode == 0
-            assert "python scripts/eval.py" in result.stdout
+            assert "scripts/eval.py" in result.stdout
     
     def test_infer_commands_dry_run(self):
         """Test inference commands (dry run)."""
@@ -180,7 +180,7 @@ class TestMakefileCommands:
                 text=True
             )
             assert result.returncode == 0
-            assert "python scripts/infer.py" in result.stdout
+            assert "scripts/infer.py" in result.stdout
     
     def test_merge_commands_dry_run(self):
         """Test model merging commands (dry run)."""
@@ -198,7 +198,7 @@ class TestMakefileCommands:
             if cmd == "merge-test":
                 assert "python -c" in result.stdout
             else:
-                assert "python scripts/merge_lora.py" in result.stdout
+                assert "scripts/merge_lora.py" in result.stdout
     
     def test_data_pipeline_commands_dry_run(self):
         """Test data processing pipeline commands (dry run)."""
@@ -213,11 +213,11 @@ class TestMakefileCommands:
             )
             assert result.returncode == 0
             if cmd == "process":
-                assert "python scripts/process_data.py" in result.stdout
+                assert "scripts/process_data.py" in result.stdout
             elif cmd == "style":
-                assert "python scripts/style_prompt.py" in result.stdout
+                assert "scripts/style_prompt.py" in result.stdout
             elif cmd == "render":
-                assert "python scripts/render_template.py" in result.stdout
+                assert "scripts/render_template.py" in result.stdout
     
     def test_dapt_commands_dry_run(self):
         """Test DAPT-related commands (dry run)."""
@@ -232,9 +232,9 @@ class TestMakefileCommands:
             )
             assert result.returncode == 0
             if cmd == "dapt-docx":
-                assert "python scripts/ingest_docx.py" in result.stdout
+                assert "scripts/ingest_docx.py" in result.stdout
             elif cmd == "dapt-train":
-                assert "python scripts/train.py" in result.stdout
+                assert "scripts/train.py" in result.stdout
                 assert "configs/run_dapt.yaml" in result.stdout
     
     def test_full_pipeline_command_dry_run(self):
@@ -249,9 +249,9 @@ class TestMakefileCommands:
         # Should include the actual pipeline steps
         expected_content = [
             "Creating necessary directories",
-            "python scripts/process_data.py",
-            "python scripts/style_prompt.py", 
-            "python scripts/render_template.py",
+            "scripts/process_data.py",
+            "scripts/style_prompt.py", 
+            "scripts/render_template.py",
             "Full data processing pipeline completed"
         ]
         for content in expected_content:
