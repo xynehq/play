@@ -21,6 +21,8 @@ make train-bnb      # Starts training with BitsAndBytes backend
 make train-unsloth  # Starts training with Unsloth backend (auto-fallback)
 make train-bnb-tb   # BitsAndBytes with TensorBoard (auto-start)
 make train-unsloth-tb # Unsloth with TensorBoard (auto-start + auto-fallback)
+make dapt-docx      # Process DOCX files for DAPT CPT datasets
+make dapt-train     # Start DAPT training with mixed CPT + instruction data
 make eval           # Runs evaluation on trained model
 make eval-test      # Evaluates on test set
 make eval-quick     # Quick evaluation (200 samples)
@@ -224,6 +226,16 @@ make train-bnb-tb
 make train-unsloth-tb
 ```
 **Result:** Backend-specific training with TensorBoard monitoring
+
+### Scenario 7: DAPT (Domain-Adaptive Pretraining) Workflow
+```bash
+# Step 1: Process DOCX documents for CPT datasets
+make dapt-docx
+
+# Step 2: Start DAPT training with mixed CPT + instruction data
+make dapt-train
+```
+**Result:** Complete DAPT workflow with mixed CPT and instruction fine-tuning
 
 ## 🛡️ Safety Features in Automation
 
