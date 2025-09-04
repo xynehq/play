@@ -8,6 +8,9 @@ import sys, json, math, argparse, warnings
 from pathlib import Path
 from typing import Dict, Any, List
 
+# Add the parent directory to Python path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import torch
 import yaml
 from datasets import load_dataset
@@ -18,6 +21,9 @@ from transformers.trainer_utils import get_last_checkpoint
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from jinja2 import Template
 from scripts.utils.model_store import prepare_local_model_dir
+from scripts.datasets_cpt import load_cpt_dataset, load_chat_dataset_for_cpt
+from scripts.collators_cpt import DataCollatorForCausalPairs
+from datasets import interleave_datasets
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -107,7 +113,7 @@ class Collator:
         inputs = []
         targets = []
         
-        # Auto-detect data format and handle both processed and rendered formats
+        # Auto-detect data format and handle multiple formats
         for row in batch:
             if "input" in row and "target" in row:
                 # Rendered format: {input: "...", target: "..."}
@@ -134,8 +140,40 @@ class Collator:
                         simple_input = f"User: {user_txt}\nAssistant:"
                     inputs.append(simple_input)
                     targets.append(asst_txt)
+            elif "messages" in row:
+                # Messages format: {messages: [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
+                messages = row["messages"]
+                user_msg = None
+                assistant_msg = None
+                system_msg = None
+                
+                for msg in messages:
+                    if msg["role"] == "user":
+                        user_msg = msg["content"]
+                    elif msg["role"] == "assistant":
+                        assistant_msg = msg["content"]
+                    elif msg["role"] == "system":
+                        system_msg = msg["content"]
+                
+                if user_msg and assistant_msg:
+                    if self.template:
+                        # Apply template if available
+                        sys_txt = (system_msg or "").strip()
+                        rendered = self.template.render(system=sys_txt, user=user_msg).strip()
+                        inputs.append(rendered)
+                        targets.append(assistant_msg)
+                    else:
+                        # No template - create simple format
+                        if system_msg:
+                            simple_input = f"System: {system_msg}\nUser: {user_msg}\nAssistant:"
+                        else:
+                            simple_input = f"User: {user_msg}\nAssistant:"
+                        inputs.append(simple_input)
+                        targets.append(assistant_msg)
+                else:
+                    raise ValueError(f"Messages format missing user or assistant message: {messages}")
             else:
-                raise ValueError(f"Unsupported data format. Expected either {{input, target}} or {{user, assistant}} format. Got: {list(row.keys())}")
+                raise ValueError(f"Unsupported data format. Expected {{input, target}}, {{user, assistant}}, or {{messages}} format. Got: {list(row.keys())}")
 
         if self.model_type == "seq2seq":
             model_inputs = self.tok(inputs, max_length=self.max_len, truncation=True, padding=True)
@@ -191,6 +229,44 @@ class Collator:
             return {"input_ids": torch.tensor(input_ids),
                     "attention_mask": torch.tensor(attention_mask),
                     "labels": torch.tensor(labels)}
+
+# ---------- CPT/DAPT dataset builder ----------
+def build_cpt_or_mixed(cfg, tokenizer):
+    """Build CPT, mixed, or return None for SFT mode."""
+    mode = cfg.get("task_mode", "sft")
+    if mode == "cpt":
+        # Pure CPT mode - single dataset
+        cpt_path = cfg["datasets"][0]["path"]
+        block_size = cfg.get("block_size", 2048)
+        pack_factor = cfg.get("pack_factor", 4)
+        cpt = load_cpt_dataset(cpt_path, tokenizer, block_size=block_size, pack_factor=pack_factor)
+        return cpt, DataCollatorForCausalPairs(tokenizer)
+    elif mode == "cpt_mixed":
+        # Mixed CPT + anchor mode
+        datasets_list = []
+        weights = []
+        block_size = cfg.get("block_size", 2048)
+        pack_factor = cfg.get("pack_factor", 4)
+        
+        for ds_cfg in cfg["datasets"]:
+            if ds_cfg["type"] == "cpt":
+                ds = load_cpt_dataset(ds_cfg["path"], tokenizer, block_size=block_size, pack_factor=pack_factor)
+            elif ds_cfg["type"] == "chat":
+                ds = load_chat_dataset_for_cpt(ds_cfg["path"], tokenizer, block_size=block_size)
+            else:
+                raise ValueError(f"Unknown dataset type: {ds_cfg['type']}")
+            
+            datasets_list.append(ds)
+            weights.append(ds_cfg.get("weight", 1.0))
+        
+        # Normalize weights
+        total_weight = sum(weights)
+        weights = [w / total_weight for w in weights]
+        
+        mixed = interleave_datasets(datasets_list, probabilities=weights, seed=cfg.get("seed", 42))
+        return mixed, DataCollatorForCausalPairs(tokenizer)
+    else:
+        return None, None  # SFT path uses existing code
 
 # ---------- Metric: ROUGE-L (simple) ----------
 def compute_metrics(tokenizer):
@@ -289,27 +365,37 @@ def main():
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token if tok.eos_token else "<|pad|>"
 
-    # datasets (structured chat)
-    paths = cfg["data"]
+    # Branch by mode: sft vs cpt vs cpt_mixed
+    ds_train, ds_val, data_collator = None, None, None
     
-    # Check if data files exist
-    train_path = paths["train_path"]
-    val_path = paths["val_path"]
-    template_path = cfg["data"]["template_path"]
-    
-    if not os.path.exists(train_path):
-        raise FileNotFoundError(f"Training data not found: {train_path}")
-    if not os.path.exists(val_path):
-        raise FileNotFoundError(f"Validation data not found: {val_path}")
-    if not os.path.exists(template_path):
-        raise FileNotFoundError(f"Template file not found: {template_path}")
-    
-    ds_train = ChatDataset(train_path)
-    ds_val = ChatDataset(val_path)
-    
-    print(f"[train] Loaded {len(ds_train)} training samples, {len(ds_val)} validation samples")
-
-    collator = Collator(tok, template_path, max_len, model_type)
+    cpt_ds, cpt_collator = build_cpt_or_mixed(cfg, tok)
+    if cfg.get("task_mode", "sft") in ("cpt", "cpt_mixed"):
+        # CPT/DAPT mode
+        print(f"[train] Using {cfg.get('task_mode')} mode with {len(cpt_ds)} samples")
+        ds_train = cpt_ds
+        ds_val = None  # CPT typically doesn't use validation during training
+        data_collator = cpt_collator
+    else:
+        # SFT mode (existing path)
+        paths = cfg["data"]
+        
+        # Check if data files exist (only for SFT mode)
+        train_path = paths["train_path"]
+        val_path = paths["val_path"]
+        template_path = cfg["data"]["template_path"]
+        
+        if not os.path.exists(train_path):
+            raise FileNotFoundError(f"Training data not found: {train_path}")
+        if not os.path.exists(val_path):
+            raise FileNotFoundError(f"Validation data not found: {val_path}")
+        if not os.path.exists(template_path):
+            raise FileNotFoundError(f"Template file not found: {template_path}")
+        
+        ds_train = ChatDataset(train_path)
+        ds_val = ChatDataset(val_path)
+        
+        print(f"[train] SFT mode: Loaded {len(ds_train)} training samples, {len(ds_val)} validation samples")
+        data_collator = Collator(tok, template_path, max_len, model_type)
 
     # backend & model load
     backend = cfg["tuning"]["backend"]         # "bnb" | "unsloth"
@@ -340,7 +426,6 @@ def main():
                     model_name,
                     quantization_config=bnb_config,
                     torch_dtype=torch.float16,
-                    device_map="auto",
                     trust_remote_code=trust_remote_code,
                 )
                 base_model = prepare_model_for_kbit_training(base_model)
@@ -422,13 +507,17 @@ def main():
     )
 
     # Add eval/save strategies in a version-safe way
-    eval_strategy_key = "evaluation_strategy" if "evaluation_strategy" in cfg["train"] else "eval_strategy"
-    eval_strategy_value = cfg["train"].get(eval_strategy_key, "epoch")
+    # For CPT/DAPT mode, force no evaluation if no eval dataset
+    if cfg.get("task_mode", "sft") in ("cpt", "cpt_mixed") and ds_val is None:
+        eval_strategy_value = "no"
+    else:
+        eval_strategy_key = "evaluation_strategy" if "evaluation_strategy" in cfg["train"] else "eval_strategy"
+        eval_strategy_value = cfg["train"].get(eval_strategy_key, "epoch")
     
     if has_eval_strategy:
-        ta_kwargs["evaluation_strategy"] = to_interval(eval_strategy_value)
+        ta_kwargs["evaluation_strategy"] = eval_strategy_value if eval_strategy_value == "no" else to_interval(eval_strategy_value)
     else:
-        ta_kwargs["eval_strategy"] = to_interval(eval_strategy_value)  # older API
+        ta_kwargs["eval_strategy"] = eval_strategy_value if eval_strategy_value == "no" else to_interval(eval_strategy_value)  # older API
 
     save_strategy_value = cfg["train"].get("save_strategy", "epoch")
     if has_save_strategy:
@@ -445,8 +534,8 @@ def main():
 
     args_tr = transformers.TrainingArguments(**ta_kwargs)
 
-    # Always use our custom collator (it handles both causal & seq2seq)
-    data_collator = collator
+    # Use the appropriate data collator (already set above)
+    # data_collator is either Collator (SFT) or DataCollatorForCausalPairs (CPT)
 
     # Resume if checkpoint present
     last_ckpt = get_last_checkpoint(outdir) if os.path.isdir(outdir) else None
@@ -465,8 +554,9 @@ def main():
 
     trainer.train(resume_from_checkpoint=last_ckpt)
 
-    # Force one eval write so TB has eval scalars even on tiny runs
-    trainer.evaluate()                       # <-- add this
+    # Force one eval write so TB has eval scalars even on tiny runs (only if eval dataset exists)
+    if ds_val is not None:
+        trainer.evaluate()
     trainer.save_state()
     if mode in ["qlora","lora"]:
         base_model.save_pretrained("adapters/last")

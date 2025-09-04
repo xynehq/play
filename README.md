@@ -26,6 +26,8 @@ Single config, QLoRA/LoRA/Full switches, bitsandbytes/Unsloth backends, Jinja ch
 * **Runs on any single GPU (8 GB+)** — VRAM probe auto-tunes batch/grad-accum.
 * **Two-config UX** — `config_base.yaml` (defaults) + backend-specific configs (`run_bnb.yaml`, `run_unsloth.yaml`).
 * **Tuning modes** — `qlora | lora | full` (config switch).
+* **Task modes** — `sft` (supervised fine-tuning) | `cpt` (continued pretraining) | `cpt_mixed` (CPT + instruction data).
+* **DAPT Support** — Domain-Adaptive Pretraining with DOCX processing and mixed training.
 * **Backends** — `bitsandbytes` (default) or `unsloth` (optional; auto-fallback to bnb).
 * **Data pipeline** — raw → structured chat (`system,user,assistant`) → Jinja render on-the-fly.
 * **UI** — **TensorBoard** only (loss/metrics/LR; optional GPU stats).
@@ -203,7 +205,7 @@ make train-unsloth-tb       # Unsloth training with TensorBoard auto-start
 **Manual TensorBoard:**
 ```bash
 make tensorboard            # uses port 6006
-make tensorboard TB_PORT=6007
+make tensorboard TB_PORT=6006
 ```
 
 Stop it:
@@ -400,6 +402,192 @@ python scripts/merge_lora.py --config configs/run_bnb.yaml \
 
 ---
 
+## 🧬 DAPT (Domain-Adaptive Pretraining)
+
+SFT-Play now supports **Domain-Adaptive Pretraining (DAPT)** for adapting models to specific domains while preserving their instruction-following capabilities.
+
+### What is DAPT?
+
+DAPT combines **Continued Pretraining (CPT)** on domain-specific text with **instruction data** to:
+- Inject domain knowledge into the model
+- Maintain chat/instruction-following abilities
+- Achieve better performance on domain-specific tasks
+
+### DAPT Features
+
+* **DOCX Processing** — Automatic conversion of Word documents to training data
+* **Mixed Training** — 90% domain text + 10% instruction data (configurable)
+* **Memory Efficient** — Uses QLoRA for 8GB+ GPU compatibility
+* **Automated Pipeline** — Simple Makefile commands for end-to-end workflow
+
+### DAPT Configuration
+
+**Create a DAPT config (`configs/run_dapt.yaml`):**
+```yaml
+include: configs/config_base.yaml
+
+task_mode: cpt_mixed                  # sft | cpt | cpt_mixed
+
+# Packing parameters for CPT
+block_size: 2048
+pack_factor: 4
+
+# Mixed datasets with weights
+datasets:
+  - name: dpip_cpt
+    path: data/processed/dpip_cpt.jsonl
+    type: cpt
+    weight: 0.9                       # 90% domain text
+  - name: anchor_instr
+    path: data/processed/anchor_instr.jsonl
+    type: chat
+    weight: 0.1                       # 10% instruction data
+
+model:
+  name: google/gemma-3-27b-it
+  max_seq_len: 2048
+
+tuning:
+  mode: qlora
+  backend: bnb
+
+train:
+  epochs: 1
+  learning_rate: 1.0e-4
+  output_dir: outputs/run-dapt
+```
+
+### DAPT Workflow
+
+**Quick Start:**
+```bash
+# 1. Place DOCX files in data/raw/
+# 2. Process documents to CPT format
+make dapt-docx
+
+# 3. Start DAPT training
+make dapt-train
+```
+
+**Detailed Steps:**
+
+1. **Prepare Domain Documents**
+   ```bash
+   # Place .docx files in data/raw/
+   cp your_domain_docs/*.docx data/raw/
+   ```
+
+2. **Process Documents**
+   ```bash
+   make dapt-docx
+   # Creates data/processed/dpip_cpt.jsonl with chunked text
+   ```
+
+3. **Configure Training**
+   ```bash
+   # Edit configs/run_dapt.yaml if needed
+   # Adjust dataset weights, model size, etc.
+   ```
+
+4. **Start Training**
+   ```bash
+   make dapt-train
+   # Trains with mixed CPT + instruction data
+   ```
+
+### DAPT Data Formats
+
+**CPT Data Format (from DOCX processing):**
+```json
+{"text": "<dpip_doc>Document content chunked into paragraphs...</dpip_doc>"}
+```
+
+**Instruction Data Format (anchor data):**
+```json
+{"messages": [{"role": "user", "content": "What is machine learning?"}, {"role": "assistant", "content": "Machine learning is..."}]}
+```
+
+### DAPT Scripts
+
+**Document Processing (`scripts/ingest_docx.py`):**
+- Converts DOCX files to plain text
+- Chunks text by paragraphs
+- Adds special `<dpip_doc>` tags
+- Outputs CPT-format JSONL
+
+**Dataset Handling (`scripts/datasets_cpt.py`):**
+- Loads and tokenizes CPT data
+- Implements sequence packing for efficiency
+- Handles mixed dataset sampling
+
+**Data Collation (`scripts/collators_cpt.py`):**
+- Generic collator for both CPT and chat data
+- Handles variable sequence lengths
+- Optimized for memory efficiency
+
+### DAPT Configuration Options
+
+**Task Modes:**
+- `sft`: Standard supervised fine-tuning (default)
+- `cpt`: Pure continued pretraining on domain text
+- `cpt_mixed`: Mixed training (CPT + instruction data)
+
+**Key Parameters:**
+```yaml
+task_mode: cpt_mixed          # Training mode
+block_size: 2048              # Token sequence length
+pack_factor: 4                # Packing efficiency multiplier
+
+datasets:
+  - name: domain_data
+    type: cpt                 # CPT data type
+    weight: 0.9               # 90% of training
+  - name: instruction_data
+    type: chat               # Chat data type
+    weight: 0.1               # 10% of training
+```
+
+### DAPT Testing
+
+**Validate DAPT Integration:**
+```bash
+python test_dapt_integration.py
+```
+
+This test validates:
+- ✅ Configuration loading
+- ✅ Anchor instruction data
+- ✅ Script imports
+- ✅ Training compatibility
+- ✅ Makefile targets
+
+### DAPT Use Cases
+
+**Academic Research:**
+- Adapt models to scientific literature
+- Domain-specific Q&A systems
+- Technical documentation processing
+
+**Business Applications:**
+- Legal document analysis
+- Medical text understanding
+- Industry-specific chatbots
+
+**Content Creation:**
+- Style-specific writing assistants
+- Domain-aware content generation
+- Specialized knowledge bases
+
+### DAPT Best Practices
+
+1. **Data Quality**: Use high-quality, domain-relevant documents
+2. **Mixing Ratios**: Start with 90% CPT + 10% instruction data
+3. **Sequence Length**: Use longer sequences (2048+) for better context
+4. **Evaluation**: Test both domain knowledge and instruction-following
+5. **Iteration**: Adjust mixing ratios based on downstream performance
+
+---
+
 ## 🛠️ Automation Commands
 
 ### Complete Makefile Reference
@@ -443,6 +631,10 @@ make tensorboard            # Start TensorBoard on outputs/tb
 make tb-stop                # Kill any running TensorBoard
 make tb-clean               # Remove TB event files
 make tb-open                # Print exact path & suggest URL
+
+# DAPT (Domain-Adaptive Pretraining)
+make dapt-docx              # Process DOCX files for DAPT
+make dapt-train             # Start DAPT training
 
 # Utilities
 make check                  # Validate project setup
@@ -497,6 +689,24 @@ make process && make style && make train
 ---
 
 ## 🧪 Troubleshooting
+
+### Recent Fixes & Improvements
+
+* **Functional Tests Fixed (v0.1.1)**
+  - Fixed `test_full_pipeline_produces_valid_training_data` to handle small validation datasets gracefully
+  - Fixed `test_process_fails_with_invalid_data` error message assertion to check both stdout and stderr
+  - All 10 functional tests now pass consistently
+
+* **TensorBoard Integration Fixed (v0.1.1)**
+  - Fixed `make train-bnb-tb` command termination issue caused by `pkill` conflicts
+  - TensorBoard now starts reliably and runs alongside training
+  - Improved process management for safer TensorBoard operations
+  - Fixed `TB_LOGDIR` variable to handle missing directories properly
+
+* **Test Robustness Improvements**
+  - Enhanced test suite to handle edge cases with small datasets
+  - Improved error message validation across different output streams
+  - Better handling of validation split edge cases in data processing
 
 ### Configuration Issues
 

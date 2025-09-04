@@ -21,6 +21,8 @@ make train-bnb      # Starts training with BitsAndBytes backend
 make train-unsloth  # Starts training with Unsloth backend (auto-fallback)
 make train-bnb-tb   # BitsAndBytes with TensorBoard (auto-start)
 make train-unsloth-tb # Unsloth with TensorBoard (auto-start + auto-fallback)
+make dapt-docx      # Process DOCX files for DAPT CPT datasets
+make dapt-train     # Start DAPT training with mixed CPT + instruction data
 make eval           # Runs evaluation on trained model
 make eval-test      # Evaluates on test set
 make eval-quick     # Quick evaluation (200 samples)
@@ -225,6 +227,16 @@ make train-unsloth-tb
 ```
 **Result:** Backend-specific training with TensorBoard monitoring
 
+### Scenario 7: DAPT (Domain-Adaptive Pretraining) Workflow
+```bash
+# Step 1: Process DOCX documents for CPT datasets
+make dapt-docx
+
+# Step 2: Start DAPT training with mixed CPT + instruction data
+make dapt-train
+```
+**Result:** Complete DAPT workflow with mixed CPT and instruction fine-tuning
+
 ## 🛡️ Safety Features in Automation
 
 ### 1. Backend Stamping
@@ -247,15 +259,33 @@ make train-unsloth-tb
 - **Why it's important**: Prevents configuration conflicts and errors
 - **How it works**: `train.py` script validates and auto-detects optimal settings
 
-### 5. TensorBoard Auto-Start
+### 5. TensorBoard Auto-Start (Fixed v0.1.1)
 - **What it does**: Automatically starts TensorBoard before training in `-tb` targets
 - **Why it's important**: Previously users had to manually start TensorBoard after training
+- **Recent fixes**: 
+  - Fixed `make train-bnb-tb` command termination issue caused by `pkill` conflicts
+  - Improved process management to prevent make process termination
+  - Fixed `TB_LOGDIR` variable to handle missing directories properly
 - **How it works**: 
-  - `make train-bnb-tb` and `make train-unsloth-tb` now start TensorBoard automatically
+  - `make train-bnb-tb` and `make train-unsloth-tb` now start TensorBoard reliably
   - TensorBoard runs in background on port 6006 (configurable)
   - Training proceeds with live monitoring available
   - TensorBoard continues running after training for result review
 - **User experience**: One command gives you training + live monitoring
+
+### 6. Test Suite Robustness (Added v0.1.1)
+- **What it does**: Comprehensive functional testing with edge case handling
+- **Why it's important**: Ensures all automation commands work reliably
+- **Recent improvements**:
+  - Fixed `test_full_pipeline_produces_valid_training_data` to handle small validation datasets
+  - Fixed `test_process_fails_with_invalid_data` error message validation
+  - Enhanced test suite to handle edge cases with small datasets
+  - All 10 functional tests now pass consistently
+- **How it works**: 
+  - Tests validate the complete automation pipeline
+  - Handles edge cases like empty validation splits
+  - Checks both stdout and stderr for error messages
+  - Ensures robust behavior across different data sizes
 
 ## 🎯 What Each Automation Solves
 

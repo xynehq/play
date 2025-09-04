@@ -36,27 +36,31 @@ This document provides a comprehensive overview of the complete project setup an
 
 ### Backend Configuration System
 
-5. **`configs/run_bnb.yaml`** - BitsAndBytes backend configuration
+5. **`configs/config_base.yaml`** - Base configuration template
+   - Core training parameters and model settings
+   - Shared configuration used by all specialized configs
+   - Foundation for configuration inheritance pattern
+
+6. **`configs/run_bnb.yaml`** - BitsAndBytes backend configuration
+   - Inherits from config_base.yaml with BnB-specific overrides
    - Optimized for stability and broad compatibility
    - fp16 precision settings
    - Separate output directory (outputs/run-bnb)
    - Comprehensive safety settings
 
-6. **`configs/run_unsloth.yaml`** - Unsloth backend configuration
+7. **`configs/run_unsloth.yaml`** - Unsloth backend configuration
+   - Inherits from config_base.yaml with Unsloth-specific overrides
    - Optimized for speed (with automatic fallback)
    - bf16 precision settings
    - Separate output directory (outputs/run-unsloth)
    - XFormers compatibility handling
 
-7. **`configs/run_bnb.yaml`** - BitsAndBytes backend configuration (default)
-   - Optimized for stability and broad compatibility
-   - Uses fp16 precision for maximum compatibility
-   - Default configuration used by Makefile
-
-8. **`configs/run_unsloth.yaml`** - Unsloth backend configuration (optional)
-   - Optimized for speed with automatic fallback
-   - Uses bf16 precision for better performance
-   - Requires compatible CUDA setup
+8. **`configs/run_dapt.yaml`** - DAPT (Domain-Adaptive Pretraining) configuration
+   - Inherits from config_base.yaml with DAPT-specific overrides
+   - Mixed CPT + instruction training configuration
+   - Weighted dataset sampling for balanced training
+   - Optimized for domain adaptation workflows
+   - Separate output directory (outputs/run-dapt)
 
 ### Enhanced Training System
 
@@ -147,6 +151,14 @@ This document provides a comprehensive overview of the complete project setup an
 - **Style customization**: Easy prompt modification
 - **Backend switching**: Easy migration between different backends
 
+### 10. DAPT (Domain-Adaptive Pretraining) System
+- **Configuration Inheritance**: Base config with specialized overrides for DAPT workflows
+- **Mixed Training**: Combines CPT (Continual Pre-Training) with instruction fine-tuning
+- **DOCX Processing**: Automated ingestion and chunking of DOCX documents for CPT datasets
+- **Weighted Sampling**: Balanced training across CPT and instruction datasets
+- **Domain Adaptation**: Specialized workflow for adapting models to specific domains
+- **Automated Pipeline**: Complete DAPT workflow from document processing to training
+
 ## 📁 Directory Structure Created
 
 ```
@@ -194,6 +206,10 @@ make full-pipeline              # Complete data processing
 make train                       # Start training
 make eval                        # Run evaluation
 make infer                       # Run inference
+
+# DAPT (Domain-Adaptive Pretraining) Workflow
+make dapt-docx                   # Process DOCX files for DAPT CPT datasets
+make dapt-train                  # Start DAPT training with mixed CPT + instruction data
 
 # Model Management
 make download-model              # Pre-download a model
@@ -351,6 +367,15 @@ make train-bnb-tb        # BitsAndBytes with TensorBoard
 ### For Speed (with Safety)
 ```bash
 make train-unsloth-tb    # Unsloth with automatic fallback
+```
+
+### For DAPT (Domain-Adaptive Pretraining)
+```bash
+# Step 1: Process DOCX documents for CPT datasets
+make dapt-docx
+
+# Step 2: Start DAPT training with mixed CPT + instruction data
+make dapt-train
 ```
 
 ### For Custom Configurations

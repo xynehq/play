@@ -294,6 +294,13 @@ runs/
 *.tsv
 *.txt
 
+# DAPT-specific files
+*.docx
+*.doc
+dpip_cpt.jsonl
+cpt_*.jsonl
+domain_*.jsonl
+
 # Exceptions: keep essential project files
 !configs/*.yaml
 !configs/*.yml
@@ -307,6 +314,8 @@ runs/
 !*.py
 !demo_inputs.txt
 !example_*.txt
+!anchor_instr.jsonl
+!test_dapt_integration.py
 
 # Keep results directory and images
 !results/

@@ -1,14 +1,17 @@
-.PHONY: help install process style render train train-with-tb stop-tb tensorboard tb tb-stop tb-clean tb-open train-and-watch eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model print-python
+.PHONY: help install process style render train train-with-tb stop-tb tensorboard tb tb-stop tb-clean tb-open train-and-watch eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model print-python dapt-docx dapt-train test test-unit test-integration test-coverage test-fast
+
+# Python detection - use python3 if available, otherwise python
+PYTHON := $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null || echo python)
 
 # Default config file
 CONFIG ?= configs/run_bnb.yaml
 
 # Style prompt (can be overridden)
-STYLE ?= "Answer concisely in 2 lines. No markdown. If unsure, say 'Not sure'."
+STYLE ?= Answer concisely in 2 lines. No markdown. If unsure, say 'Not sure'.
 
 # ---- TensorBoard config ----
 TB_PORT ?= 6006
-TB_LOGDIR ?= $(shell realpath outputs/tb)
+TB_LOGDIR ?= $(shell mkdir -p outputs/tb && realpath outputs/tb)
 
 help:
 	@echo "SFT-Play Makefile Commands:"
@@ -37,6 +40,10 @@ help:
 	@echo "  infer         Interactive inference (chat mode)"
 	@echo "  infer-batch   Batch inference from file"
 	@echo "  infer-interactive Interactive inference (explicit)"
+	@echo ""
+	@echo "DAPT (Domain-Adaptive Pretraining):"
+	@echo "  dapt-docx     Process DOCX files for DAPT CPT datasets"
+	@echo "  dapt-train    Start DAPT training with mixed CPT + instruction data"
 	@echo ""
 	@echo "Monitoring:"
 	@echo "  tensorboard   Start TensorBoard on outputs/tb"
@@ -93,7 +100,7 @@ setup-dirs:
 
 process:
 	@echo "Processing raw data..."
-	python scripts/process_data.py --config $(CONFIG)
+	$(PYTHON) scripts/process_data.py --config $(CONFIG)
 
 style:
 	@echo "Applying style prompts..."
@@ -101,7 +108,7 @@ style:
 		echo "Error: data/processed/train.jsonl not found. Run 'make process' first."; \
 		exit 1; \
 	fi
-	python scripts/style_prompt.py \
+	$(PYTHON) scripts/style_prompt.py \
 		--config $(CONFIG) \
 		--style "$(STYLE)" \
 		--in data/processed/train.jsonl \
@@ -110,7 +117,7 @@ style:
 	@for split in val test; do \
 		if [ -f data/processed/$$split.jsonl ]; then \
 			echo "Processing $$split split..."; \
-			python scripts/style_prompt.py \
+			$(PYTHON) scripts/style_prompt.py \
 				--config $(CONFIG) \
 				--style "$(STYLE)" \
 				--in data/processed/$$split.jsonl \
@@ -125,14 +132,14 @@ render:
 		echo "Error: data/processed/train.jsonl not found. Run 'make process' first."; \
 		exit 1; \
 	fi
-	python scripts/render_template.py \
+	$(PYTHON) scripts/render_template.py \
 		--config $(CONFIG) \
 		--in data/processed/train.jsonl \
 		--out data/rendered/train.jsonl
 	@for split in val test; do \
 		if [ -f data/processed/$$split.jsonl ]; then \
 			echo "Rendering $$split split..."; \
-			python scripts/render_template.py \
+			$(PYTHON) scripts/render_template.py \
 				--config $(CONFIG) \
 				--in data/processed/$$split.jsonl \
 				--out data/rendered/$$split.jsonl; \
@@ -141,20 +148,20 @@ render:
 
 train:
 	@echo "Starting training..."
-	PYTHONPATH=. python scripts/train.py --config $(CONFIG)
+	PYTHONPATH=. $(PYTHON) scripts/train.py --config $(CONFIG)
 
 train-bnb:
 	@echo "Starting training with BitsAndBytes backend..."
-	PYTHONPATH=. python scripts/train.py --config configs/run_bnb.yaml
+	PYTHONPATH=. $(PYTHON) scripts/train.py --config configs/run_bnb.yaml
 
 train-unsloth:
 	@echo "Starting training with Unsloth backend (XFormers disabled)..."
-	XFORMERS_DISABLED=1 UNSLOTH_DISABLE_FAST_ATTENTION=1 PYTHONPATH=. python scripts/train.py --config configs/run_unsloth.yaml
+	XFORMERS_DISABLED=1 UNSLOTH_DISABLE_FAST_ATTENTION=1 PYTHONPATH=. $(PYTHON) scripts/train.py --config configs/run_unsloth.yaml
 
 ## train-with-tb: Train + print how to launch TB
 train-with-tb:
 	@echo "Starting training…"
-	PYTHONPATH=. python scripts/train.py --config $(CONFIG)
+	PYTHONPATH=. $(PYTHON) scripts/train.py --config $(CONFIG)
 	@echo ""
 	@echo "✅ Training finished. To view logs:"
 	@echo "   make tensorboard TB_PORT=$(TB_PORT)"
@@ -162,24 +169,24 @@ train-with-tb:
 train-bnb-tb:
 	@echo "Starting BitsAndBytes training with TensorBoard..."
 	@mkdir -p outputs/tb
-	@pkill -f tensorboard || true
+	@echo "📈 Starting TensorBoard at http://localhost:$(TB_PORT)"
 	@nohup tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0 >/dev/null 2>&1 &
-	@sleep 2
-	@echo "📈 TensorBoard started at http://localhost:$(TB_PORT)"
-	PYTHONPATH=. python scripts/train.py --config configs/run_bnb.yaml
+	@sleep 3
+	@echo "📈 TensorBoard should be running at http://localhost:$(TB_PORT)"
+	PYTHONPATH=. $(PYTHON) scripts/train.py --config configs/run_bnb.yaml
 	@echo ""
-	@echo "✅ Training finished. TensorBoard is still running at:"
+	@echo "✅ Training finished. TensorBoard may still be running at:"
 	@echo "   http://localhost:$(TB_PORT)"
 	@echo "   To stop TensorBoard: make tb-stop"
 
 train-unsloth-tb:
 	@echo "Starting Unsloth training with TensorBoard..."
 	@mkdir -p outputs/tb
-	@pkill -f tensorboard || true
+	@pgrep -f "tensorboard.*$(TB_PORT)" | xargs -r kill || true
 	@nohup tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0 >/dev/null 2>&1 &
 	@sleep 2
 	@echo "📈 TensorBoard started at http://localhost:$(TB_PORT)"
-	XFORMERS_DISABLED=1 UNSLOTH_DISABLE_FAST_ATTENTION=1 PYTHONPATH=. python scripts/train.py --config configs/run_unsloth.yaml
+	XFORMERS_DISABLED=1 UNSLOTH_DISABLE_FAST_ATTENTION=1 PYTHONPATH=. $(PYTHON) scripts/train.py --config configs/run_unsloth.yaml
 	@echo ""
 	@echo "✅ Training finished. TensorBoard is still running at:"
 	@echo "   http://localhost:$(TB_PORT)"
@@ -188,11 +195,11 @@ train-unsloth-tb:
 ## train-and-watch: Start TB (bg) then train
 train-and-watch:
 	@mkdir -p outputs/tb
-	@pkill -f tensorboard || true
+	@pgrep -f "tensorboard.*$(TB_PORT)" | xargs -r kill || true
 	@nohup tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0 >/dev/null 2>&1 &
 	@sleep 2
 	@echo "📈 TensorBoard at http://localhost:$(TB_PORT)"
-	PYTHONPATH=. python scripts/train.py --config $(CONFIG)
+	PYTHONPATH=. $(PYTHON) scripts/train.py --config $(CONFIG)
 
 ## tensorboard: Start TensorBoard on outputs/tb (override TB_PORT=6007 if needed)
 tensorboard tb:
@@ -218,23 +225,23 @@ tb-open:
 
 eval:
 	@echo "Running evaluation on validation set..."
-	PYTHONPATH=. python scripts/eval.py --config $(CONFIG) --split val
+	PYTHONPATH=. $(PYTHON) scripts/eval.py --config $(CONFIG) --split val
 
 eval-test:
 	@echo "Running evaluation on test set..."
-	PYTHONPATH=. python scripts/eval.py --config $(CONFIG) --split test
+	PYTHONPATH=. $(PYTHON) scripts/eval.py --config $(CONFIG) --split test
 
 eval-val:
 	@echo "Running evaluation on validation set..."
-	PYTHONPATH=. python scripts/eval.py --config $(CONFIG) --split val
+	PYTHONPATH=. $(PYTHON) scripts/eval.py --config $(CONFIG) --split val
 
 eval-quick:
 	@echo "Running quick evaluation (200 samples)..."
-	PYTHONPATH=. python scripts/eval.py --config $(CONFIG) --split val --limit 200
+	PYTHONPATH=. $(PYTHON) scripts/eval.py --config $(CONFIG) --split val --limit 200
 
 eval-full:
 	@echo "Running full evaluation (no limit)..."
-	PYTHONPATH=. python scripts/eval.py --config $(CONFIG) --split val --limit 0
+	PYTHONPATH=. $(PYTHON) scripts/eval.py --config $(CONFIG) --split val --limit 0
 
 infer:
 	@echo "Starting interactive inference..."
@@ -350,10 +357,52 @@ clean:
 	rm -f demo_inputs.txt
 	@echo "Clean complete!"
 
-full-pipeline: setup-dirs process style render
-	@echo "Full data processing pipeline completed!"
+full-pipeline: setup-dirs
+	@echo "Creating necessary directories"
+	@$(MAKE) process
+	@$(MAKE) style  
+	@$(MAKE) render
+	@echo "Full data processing pipeline completed"
 	@echo "Next steps:"
 	@echo "  1. Review processed data in data/processed_with_style/"
 	@echo "  2. Run 'make check' to validate setup"
 	@echo "  3. Run 'make train' to start training"
 	@echo "  4. Run 'make eval' to evaluate the model"
+
+# DAPT (Domain-Adaptive Pretraining) targets
+dapt-docx:
+	@echo "Processing DOCX files for DAPT..."
+	$(PYTHON) scripts/ingest_docx.py
+
+dapt-train:
+	@echo "Starting DAPT training..."
+	PYTHONPATH=. $(PYTHON) scripts/train.py --config configs/run_dapt.yaml
+
+# Testing targets
+test:
+	@echo "Running all tests..."
+	pytest
+
+test-unit:
+	@echo "Running unit tests..."
+	pytest -m unit
+
+test-integration:
+	@echo "Running integration tests..."
+	pytest -m integration
+
+test-coverage:
+	@echo "Running tests with coverage report..."
+	pytest --cov=scripts --cov-report=html --cov-report=term-missing
+
+test-fast:
+	@echo "Running fast tests (excluding slow tests)..."
+	pytest -m "not slow"
+
+test-commands:
+	@echo "Testing all Makefile commands..."
+	pytest tests/test_commands.py -v
+
+test-configs:
+	@echo "Testing configuration files..."
+	pytest tests/test_configs.py -v
