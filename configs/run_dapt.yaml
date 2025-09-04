@@ -1,25 +1,18 @@
 include: configs/config_base.yaml
 
-task_mode: cpt_mixed                  # sft | cpt | cpt_mixed
+# DAPT-specific overrides
+task_mode: cpt_mixed             # Enable mixed CPT + instruction training
 
 model:
-  name: google/gemma-3-27b-it
-  max_seq_len: 2048
-  trust_remote_code: true
-  type: causal
+  name: Qwen/Qwen2.5-1.5B-Instruct  # Use smaller model for testing
+  max_seq_len: 1024              # Moderate sequence length for testing
 
 tuning:
-  mode: qlora                         # existing plumbing
   backend: bnb
   lora:
-    r: 16
+    r: 16                        # Smaller rank for DAPT
     alpha: 32
-    dropout: 0.05
     target_modules: [q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj]
-
-# Packing knobs used by CPT
-block_size: 2048
-pack_factor: 4
 
 # Mix CPT + anchor at train-time
 datasets:
@@ -33,25 +26,13 @@ datasets:
     weight: 0.1
 
 train:
-  epochs: 1
-  learning_rate: 1.0e-4
+  epochs: 1                      # Single epoch for DAPT
+  learning_rate: 1.0e-4          # Lower learning rate
   warmup_ratio: 0.03
-  lr_scheduler_type: cosine
-  gradient_checkpointing: true
-  bf16: true
-  fp16: false
-  batch_size: auto
-  grad_accum: auto
-  evaluation_strategy: "no"
+  evaluation_strategy: "no"      # No evaluation for DAPT
+  eval_strategy: "no"            # Ensure both variants are set
+  save_strategy: "steps"         # Keep save strategy as steps
+  load_best_model_at_end: false
   logging_steps: 25
   save_steps: 500
   output_dir: outputs/run-dapt
-
-data:
-  # SFT-only fields (kept for backward-compat)
-  format: chat
-  template_path: chat_templates/default.jinja
-  train_path: data/processed/train.jsonl
-  val_path:   data/processed/val.jsonl
-  test_path:  data/processed/test.jsonl
-  cache_dir:  data/cache

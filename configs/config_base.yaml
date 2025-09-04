@@ -11,6 +11,25 @@ pack_factor: 4
 # Optional multi-dataset list used when mode=cpt_mixed
 datasets: []            # e.g. defined in run_dapt.yaml
 
+# Common model configuration
+model:
+  name: Qwen/Qwen2.5-1.5B-Instruct     # HF repo_id OR local folder path
+  local_dir: models/qwen2.5-1.5b       # where to store/download the model
+  revision: main                        # optional: tag/sha
+  trust_remote_code: true               # some repos need this
+  type: causal
+  max_seq_len: 512
+
+# Common tuning configuration
+tuning:
+  mode: qlora          # qlora | lora | full
+  backend: bnb         # default backend, can be overridden
+  lora:
+    r: 32
+    alpha: 64
+    dropout: 0.05
+    target_modules: auto
+
 train:
   epochs: 3
   learning_rate: 2e-4
@@ -19,7 +38,7 @@ train:
   warmup_ratio: 0.06                  # or set num_warmup_steps instead
   optim: adamw_torch
 
-  # precision & memory
+  # precision & memory (can be overridden per backend)
   bf16: true
   fp16: false
   gradient_checkpointing: true
@@ -42,6 +61,10 @@ train:
 data:
   format: chat
   template_path: chat_templates/default.jinja
+  train_path: data/processed/train.jsonl
+  val_path:   data/processed/val.jsonl
+  test_path:  data/processed/test.jsonl
+  cache_dir: data/cache
   split:
     train_ratio: 0.7
     val_ratio: 0.1

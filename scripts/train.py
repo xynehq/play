@@ -8,6 +8,9 @@ import sys, json, math, argparse, warnings
 from pathlib import Path
 from typing import Dict, Any, List
 
+# Add the parent directory to Python path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import torch
 import yaml
 from datasets import load_dataset
@@ -376,7 +379,7 @@ def main():
         # SFT mode (existing path)
         paths = cfg["data"]
         
-        # Check if data files exist
+        # Check if data files exist (only for SFT mode)
         train_path = paths["train_path"]
         val_path = paths["val_path"]
         template_path = cfg["data"]["template_path"]
@@ -423,7 +426,6 @@ def main():
                     model_name,
                     quantization_config=bnb_config,
                     torch_dtype=torch.float16,
-                    device_map="auto",
                     trust_remote_code=trust_remote_code,
                 )
                 base_model = prepare_model_for_kbit_training(base_model)
@@ -505,13 +507,17 @@ def main():
     )
 
     # Add eval/save strategies in a version-safe way
-    eval_strategy_key = "evaluation_strategy" if "evaluation_strategy" in cfg["train"] else "eval_strategy"
-    eval_strategy_value = cfg["train"].get(eval_strategy_key, "epoch")
+    # For CPT/DAPT mode, force no evaluation if no eval dataset
+    if cfg.get("task_mode", "sft") in ("cpt", "cpt_mixed") and ds_val is None:
+        eval_strategy_value = "no"
+    else:
+        eval_strategy_key = "evaluation_strategy" if "evaluation_strategy" in cfg["train"] else "eval_strategy"
+        eval_strategy_value = cfg["train"].get(eval_strategy_key, "epoch")
     
     if has_eval_strategy:
-        ta_kwargs["evaluation_strategy"] = to_interval(eval_strategy_value)
+        ta_kwargs["evaluation_strategy"] = eval_strategy_value if eval_strategy_value == "no" else to_interval(eval_strategy_value)
     else:
-        ta_kwargs["eval_strategy"] = to_interval(eval_strategy_value)  # older API
+        ta_kwargs["eval_strategy"] = eval_strategy_value if eval_strategy_value == "no" else to_interval(eval_strategy_value)  # older API
 
     save_strategy_value = cfg["train"].get("save_strategy", "epoch")
     if has_save_strategy:

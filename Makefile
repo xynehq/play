@@ -93,7 +93,7 @@ setup-dirs:
 
 process:
 	@echo "Processing raw data..."
-	python scripts/process_data.py --config $(CONFIG)
+	python3 scripts/process_data.py --config $(CONFIG)
 
 style:
 	@echo "Applying style prompts..."
@@ -101,7 +101,7 @@ style:
 		echo "Error: data/processed/train.jsonl not found. Run 'make process' first."; \
 		exit 1; \
 	fi
-	python scripts/style_prompt.py \
+	python3 scripts/style_prompt.py \
 		--config $(CONFIG) \
 		--style "$(STYLE)" \
 		--in data/processed/train.jsonl \
@@ -110,7 +110,7 @@ style:
 	@for split in val test; do \
 		if [ -f data/processed/$$split.jsonl ]; then \
 			echo "Processing $$split split..."; \
-			python scripts/style_prompt.py \
+			python3 scripts/style_prompt.py \
 				--config $(CONFIG) \
 				--style "$(STYLE)" \
 				--in data/processed/$$split.jsonl \
@@ -125,14 +125,14 @@ render:
 		echo "Error: data/processed/train.jsonl not found. Run 'make process' first."; \
 		exit 1; \
 	fi
-	python scripts/render_template.py \
+	python3 scripts/render_template.py \
 		--config $(CONFIG) \
 		--in data/processed/train.jsonl \
 		--out data/rendered/train.jsonl
 	@for split in val test; do \
 		if [ -f data/processed/$$split.jsonl ]; then \
 			echo "Rendering $$split split..."; \
-			python scripts/render_template.py \
+			python3 scripts/render_template.py \
 				--config $(CONFIG) \
 				--in data/processed/$$split.jsonl \
 				--out data/rendered/$$split.jsonl; \
@@ -361,7 +361,7 @@ full-pipeline: setup-dirs process style render
 # DAPT (Domain-Adaptive Pretraining) targets
 dapt-docx:
 	@echo "Processing DOCX files for DAPT..."
-	python scripts/ingest_docx.py
+	python3 scripts/ingest_docx.py
 
 dapt-train:
 	@echo "Starting DAPT training..."
