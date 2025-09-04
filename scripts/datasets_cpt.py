@@ -7,7 +7,27 @@ def load_cpt_dataset(jsonl_path, tokenizer, block_size=2048, pack_factor=4, add_
     max_len = block_size * pack_factor
 
     def tok_fn(batch):
-        texts = batch["text"]
+        # Handle different data formats
+        if "text" in batch:
+            # Raw text format
+            texts = batch["text"]
+        elif "instruction" in batch:
+            # Instruction format - convert to text
+            texts = []
+            for i in range(len(batch["instruction"])):
+                instruction = batch["instruction"][i]
+                input_text = batch.get("input", [""] * len(batch["instruction"]))[i]
+                output_text = batch.get("output", [""] * len(batch["instruction"]))[i]
+                
+                # Create a natural text format for CPT
+                if input_text.strip():
+                    full_text = f"{instruction}\n\nInput: {input_text}\n\nResponse: {output_text}"
+                else:
+                    full_text = f"{instruction}\n\nResponse: {output_text}"
+                texts.append(full_text)
+        else:
+            raise ValueError(f"Unsupported data format. Expected 'text' or 'instruction' fields. Got: {list(batch.keys())}")
+        
         if add_eos and tokenizer.eos_token:
             texts = [t + tokenizer.eos_token for t in texts]
         out = tokenizer(texts, truncation=True, max_length=max_len, add_special_tokens=False)

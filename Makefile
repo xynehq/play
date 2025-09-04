@@ -7,11 +7,11 @@ PYTHON := $(shell command -v python3 2>/dev/null || command -v python 2>/dev/nul
 CONFIG ?= configs/run_bnb.yaml
 
 # Style prompt (can be overridden)
-STYLE ?= "Answer concisely in 2 lines. No markdown. If unsure, say 'Not sure'."
+STYLE ?= Answer concisely in 2 lines. No markdown. If unsure, say 'Not sure'.
 
 # ---- TensorBoard config ----
 TB_PORT ?= 6006
-TB_LOGDIR ?= $(shell realpath outputs/tb)
+TB_LOGDIR ?= $(shell mkdir -p outputs/tb && realpath outputs/tb)
 
 help:
 	@echo "SFT-Play Makefile Commands:"
@@ -169,20 +169,20 @@ train-with-tb:
 train-bnb-tb:
 	@echo "Starting BitsAndBytes training with TensorBoard..."
 	@mkdir -p outputs/tb
-	@pkill -f tensorboard || true
+	@echo "📈 Starting TensorBoard at http://localhost:$(TB_PORT)"
 	@nohup tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0 >/dev/null 2>&1 &
-	@sleep 2
-	@echo "📈 TensorBoard started at http://localhost:$(TB_PORT)"
+	@sleep 3
+	@echo "📈 TensorBoard should be running at http://localhost:$(TB_PORT)"
 	PYTHONPATH=. $(PYTHON) scripts/train.py --config configs/run_bnb.yaml
 	@echo ""
-	@echo "✅ Training finished. TensorBoard is still running at:"
+	@echo "✅ Training finished. TensorBoard may still be running at:"
 	@echo "   http://localhost:$(TB_PORT)"
 	@echo "   To stop TensorBoard: make tb-stop"
 
 train-unsloth-tb:
 	@echo "Starting Unsloth training with TensorBoard..."
 	@mkdir -p outputs/tb
-	@pkill -f tensorboard || true
+	@pgrep -f "tensorboard.*$(TB_PORT)" | xargs -r kill || true
 	@nohup tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0 >/dev/null 2>&1 &
 	@sleep 2
 	@echo "📈 TensorBoard started at http://localhost:$(TB_PORT)"
@@ -195,7 +195,7 @@ train-unsloth-tb:
 ## train-and-watch: Start TB (bg) then train
 train-and-watch:
 	@mkdir -p outputs/tb
-	@pkill -f tensorboard || true
+	@pgrep -f "tensorboard.*$(TB_PORT)" | xargs -r kill || true
 	@nohup tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0 >/dev/null 2>&1 &
 	@sleep 2
 	@echo "📈 TensorBoard at http://localhost:$(TB_PORT)"

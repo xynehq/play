@@ -554,8 +554,9 @@ def main():
 
     trainer.train(resume_from_checkpoint=last_ckpt)
 
-    # Force one eval write so TB has eval scalars even on tiny runs
-    trainer.evaluate()                       # <-- add this
+    # Force one eval write so TB has eval scalars even on tiny runs (only if eval dataset exists)
+    if ds_val is not None:
+        trainer.evaluate()
     trainer.save_state()
     if mode in ["qlora","lora"]:
         base_model.save_pretrained("adapters/last")

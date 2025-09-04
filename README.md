@@ -690,6 +690,24 @@ make process && make style && make train
 
 ## 🧪 Troubleshooting
 
+### Recent Fixes & Improvements
+
+* **Functional Tests Fixed (v0.1.1)**
+  - Fixed `test_full_pipeline_produces_valid_training_data` to handle small validation datasets gracefully
+  - Fixed `test_process_fails_with_invalid_data` error message assertion to check both stdout and stderr
+  - All 10 functional tests now pass consistently
+
+* **TensorBoard Integration Fixed (v0.1.1)**
+  - Fixed `make train-bnb-tb` command termination issue caused by `pkill` conflicts
+  - TensorBoard now starts reliably and runs alongside training
+  - Improved process management for safer TensorBoard operations
+  - Fixed `TB_LOGDIR` variable to handle missing directories properly
+
+* **Test Robustness Improvements**
+  - Enhanced test suite to handle edge cases with small datasets
+  - Improved error message validation across different output streams
+  - Better handling of validation split edge cases in data processing
+
 ### Configuration Issues
 
 * **Training Arguments Mismatch Error**
