@@ -40,38 +40,47 @@ Single config, QLoRA/LoRA/Full switches, bitsandbytes/Unsloth backends, Jinja ch
 ## 🗂️ Repo Layout
 
 ```
-sft-play/
-├─ configs/
-│  ├─ config_base.yaml          # reusable defaults (rarely change)
-│  ├─ run_bnb.yaml              # BitsAndBytes backend config (default)
-│  └─ run_unsloth.yaml          # Unsloth backend config (optional)
-├─ data/
-│  ├─ raw/                      # input sources (json/csv/jsonl)
-│  ├─ processed/                # structured chat (system,user,assistant)
-│  ├─ processed_with_style/     # optional: after style injection
-│  └─ rendered/                 # optional: materialized seq2seq (input,target)
-├─ chat_templates/
-│  └─ default.jinja             # single Jinja template
-├─ scripts/
-│  ├─ process_data.py           # raw → structured chat + split
-│  ├─ style_prompt.py           # inject/override system/style rule
-│  ├─ render_template.py        # (optional) Jinja → seq2seq jsonl
-│  ├─ train.py                  # QLoRA/LoRA/Full; bnb/Unsloth; TB logging
-│  ├─ eval.py                   # ROUGE-L/SARI/Exact-Match (+ schema checks)
-│  ├─ infer.py                  # batch/interactive inference (same template)
-│  ├─ merge_lora.py             # merge adapters → single FP16 model (optional)
+PLAY/
+├─ configs/                    # Training configurations
+│  ├─ config_base.yaml
+│  ├─ config_run.yaml
+│  ├─ run_bnb.yaml
+│  ├─ run_dapt.yaml
+│  └─ run_unsloth.yaml
+├─ chat_templates/             # Chat formatting templates
+│  └─ default.jinja
+├─ data/                       # SFT training data
+│  ├─ processed/              # Processed training data
+│  │  └─ train.jsonl          # 778 DPIP samples ready for training
+│  ├─ processed_with_style/
+│  ├─ raw/
+│  ├─ rendered/
+│  ├─ generated/
+│  └─ sft/
+│     └─ train.jsonl          # Exported SFT format
+├─ data-generation/            # QnA data generation pipeline
+│  ├─ configs/                # Generation configs
+│  ├─ prompts/                # Python prompt modules
+│  ├─ qna_core/               # Core modules (loaders, chunking, validation)
+│  ├─ scripts/                # Generation scripts
+│  ├─ data/
+│  │  ├─ generated/
+│  │  ├─ processed/
+│  │  └─ raw_docs/            # Put PDF/DOCX here
+│  └─ generated-data/
+│     └─ qna_high_confidence_validated.jsonl  # 1001 samples
+├─ scripts/                    # SFT training scripts
+│  ├─ train.py                # Main training script
+│  ├─ eval.py
+│  ├─ infer.py
 │  └─ utils/
-│     └─ model_store.py        # handles model downloading/caching
-├─ env/
-│  └─ accelerate_config.yaml    # fp16, single-GPU defaults
-├─ outputs/                     # TB logs, metrics, sample preds
-├─ adapters/                    # LoRA adapter checkpoints
-├─ workflows/                   # automation scripts
-│  ├─ quick_start.sh            # interactive setup with sample data
-│  └─ batch_process.sh          # batch processing automation
-├─ Makefile                     # complete automation commands
-├─ requirements.txt
-└─ README.md
+├─ adapters/                   # LoRA adapters will be saved here
+├─ outputs/                    # Training outputs and logs
+├─ results/                    # Evaluation results
+├─ tests/                      # Unit tests
+├─ workflows/                  # Batch processing scripts
+├─ Makefile                    # Main pipeline commands
+└─ requirements.txt            # Python dependencies
 ```
 
 ---
