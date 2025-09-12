@@ -265,7 +265,7 @@ checkpoints/
 *.hdf5
 *.pkl
 *.pickle
-
+*data
 # LoRA adapters and fine-tuned models
 adapters/*
 !adapters/.gitkeep

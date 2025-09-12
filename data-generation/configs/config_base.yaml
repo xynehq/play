@@ -1,0 +1,48 @@
+seed: 42
+
+paths:
+  docs_dir: data/raw_docs
+  processed_dir: data/processed
+  generated_dir: data/generated
+  prompts_pkg: prompts
+
+chunking:
+  target_tokens: 380
+  overlap_tokens: 60
+  tokenizer: cl100k_base
+
+generation:
+  routing: round_robin          # fallback | round_robin
+  q_prompt: question_gen     # module under `prompts_pkg`
+  a_prompt: answer_gen
+  primary_endpoint: https://models.breezehq.dev/ #https://1c6229182aed.ngrok-free.app/
+  secondary_endpoint: https://ollama.pratikn.com/
+  primary_model: qwen3:32b
+  secondary_model: gemma3:27b
+  max_questions_per_chunk: 14
+  topk_context: 4
+  temperature_q: 0.7
+  temperature_a: 0.1
+  max_tokens_a: 1024
+
+judge:
+  module: judge_eval
+  endpoint: https://models.breezehq.dev/
+  model: hf.co/unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M
+  thresholds:
+    faithfulness: 4
+    completeness: 4
+    specificity: 4
+    citations_valid: 1
+    overall: 4
+
+validation:
+  lexical_min_overlap_ratio: 0.25
+  semantic_min_cos_sim: 0.60
+  allow_uncited_sentences_ratio: 0.10
+  max_hallucination_flags: 0
+
+export:
+  max_per_doc: 300
+  dedup_near_threshold: 0.92
+  keep_scores: true
