@@ -55,13 +55,14 @@ def normalize_item(obj: Any, default_system: str) -> Dict[str, str]:
     Customize this mapping as you add sources.
     Supported quick-cases:
       - {"question": "...", "answer":"..."}
+      - {"query": "...", "answer":"..."}  # Added support for query/answer format
       - {"user":"...", "assistant":"..."}  (system optional)
       - ["what is animal?", {"answer": "..."}]  # pairwise toy case
       - {"prompt":"...", "response":"..."}
     """
     if isinstance(obj, dict):
-        # common field names
-        user = obj.get("user") or obj.get("question") or obj.get("prompt") or obj.get("input") or obj.get("instruction")
+        # common field names - added 'query' support
+        user = obj.get("user") or obj.get("question") or obj.get("query") or obj.get("prompt") or obj.get("input") or obj.get("instruction")
         assistant = obj.get("assistant") or obj.get("answer") or obj.get("response") or obj.get("target") or obj.get("output")
         system = obj.get("system") or default_system
         if user and assistant:
@@ -113,6 +114,7 @@ def main():
     ap.add_argument("--raw_path", default="data/raw/raw.json", help="Raw input file (json/jsonl/csv)")
     ap.add_argument("--system_prompt", default="You are a helpful domain assistant.",
                     help="Default system instruction if raw rows don't include one.")
+    ap.add_argument("--context_docs", help="Path to file containing document context (txt file with all 4 docs)")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -144,12 +146,54 @@ def main():
         print(f"[process_data] unsupported raw format: {raw_p.suffix}", file=sys.stderr)
         sys.exit(1)
 
+    # Load context docs and system prompt from config if available
+    context_content = ""
+    system_prompt = args.system_prompt
+    
+    # Check for production_rag config section
+    if "production_rag" in cfg and cfg["production_rag"].get("enable_context_injection", False):
+        # Load system prompt from file
+        system_prompt_path = cfg["production_rag"].get("system_prompt_path")
+        if system_prompt_path:
+            prompt_path = Path(system_prompt_path)
+            if prompt_path.exists():
+                system_prompt = prompt_path.read_text(encoding='utf-8').strip()
+                print(f"[process_data] Loaded system prompt from: {system_prompt_path}")
+            else:
+                print(f"[process_data] Warning: System prompt file not found: {system_prompt_path}")
+        
+        # Load context docs from file
+        context_docs_path = cfg["production_rag"].get("context_docs_path")
+        if context_docs_path:
+            context_path = Path(context_docs_path)
+            if context_path.exists():
+                context_content = context_path.read_text(encoding='utf-8').strip()
+                print(f"[process_data] Loaded context docs from: {context_docs_path} ({len(context_content)} characters)")
+            else:
+                print(f"[process_data] Warning: Context docs file not found: {context_docs_path}")
+    
+    # Override with command line args if provided
+    if args.context_docs:
+        context_path = Path(args.context_docs)
+        if context_path.exists():
+            context_content = context_path.read_text(encoding='utf-8').strip()
+            print(f"[process_data] Loaded context docs from CLI: {len(context_content)} characters")
+        else:
+            print(f"[process_data] Warning: Context docs file not found: {args.context_docs}")
+
     # normalize
     norm: List[Dict[str,str]] = []
     for obj in raw_items:
         try:
             row = normalize_item(obj, args.system_prompt)
-            norm.append(sanitize(row))
+            
+            # Add context docs to user query if provided
+            if context_content:
+                original_query = row["user"]
+                # Format like production RAG: [CONTEXT] + [QUESTION]
+                row["user"] = f"[CONTEXT]\n{context_content}\n\n[QUESTION]\n{original_query}"
+            
+            norm.append(sanitize(row, max_user_len=8192))  # Increased for context
         except Exception as e:
             # skip bad rows but log a hint
             print(f"[process_data] skip row due to: {e}")

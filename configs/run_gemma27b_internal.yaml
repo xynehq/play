@@ -1,15 +1,15 @@
 include: configs/config_base.yaml
 
-# Model configuration for Gemma 3 27B internal docs
+# Model configuration for Gemma 3 27B
 model:
   name: google/gemma-3-27b-it
-  max_seq_len: 4096    # Longer for docs + context + query
+  max_seq_len: 4096  # Longer for docs + context + query
   type: causal
 
 # Tuning for generalization (not overfitting)
 tuning:
   mode: qlora
-  backend: bnb         # BitsAndBytes backend
+  backend: bnb
   lora:
     r: 32              # Moderate rank for generalization
     alpha: 64          # 2x rank
@@ -18,39 +18,45 @@ tuning:
 
 # Training optimized for production RAG
 train:
-  epochs: 4            # 4 epochs as requested
+  epochs: 3            # Fewer epochs to prevent overfitting
   learning_rate: 5e-5  # Lower LR for stable, generalizable learning
   weight_decay: 0.01
   warmup_ratio: 0.1    # Longer warmup for stability
   lr_scheduler_type: cosine_with_restarts  # Better for generalization
+  optim: adamw_torch
   
   # H200 optimized settings
-  bf16: true           # H200 supports bf16 natively
+  bf16: true
   fp16: false
   gradient_checkpointing: true
   batch_size: 2        # Conservative for 4K context
   grad_accum: 4        # Effective batch = 8
   
-  # Checkpoint after every epoch
-  evaluation_strategy: epoch
-  save_strategy: epoch
-  save_total_limit: 4  # Keep all 4 epoch checkpoints
+  # Evaluation strategy for best model selection
+  evaluation_strategy: steps
+  eval_steps: 50       # Less frequent evaluation
+  save_strategy: steps
+  save_steps: 50
+  save_total_limit: 3
   load_best_model_at_end: true
   metric_for_best_model: eval_loss
   greater_is_better: false
   
-  output_dir: outputs/run-bnb-gemma27b
+  output_dir: outputs/gemma27b-internal-docs
 
 # Data configuration for Gemma template
 data:
+  format: chat
   template_path: chat_templates/gemma.jinja
+  train_path: data/processed/train.jsonl
+  val_path: data/processed/val.jsonl
+  test_path: data/processed/test.jsonl
   split:
     train_ratio: 0.8   # More training data
     val_ratio: 0.15    # Validation for early stopping
     test_ratio: 0.05   # Small test set
 
-# Production RAG configuration
-production_rag:
-  system_prompt_path: prompts/juspay_system_prompt.txt
-  context_docs_path: data/raw/juspay_docs_context.txt
-  enable_context_injection: true
+# Logging
+logging:
+  backend: tensorboard
+  log_interval: 10
