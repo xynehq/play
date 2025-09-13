@@ -1,24 +1,24 @@
 seed: 42
-run_name: run-01
+run_name: run-DAPT-5
 
 # WHAT we train
-mode: sft               # allowed: sft | cpt | cpt_mixed
+mode: cpt_mixed               # allowed: sft | cpt | cpt_mixed
 
 # Packing for CPT/DAPT (safe defaults; ignored by sft mode)
-block_size: 2048
-pack_factor: 4
-
+block_size: 258
+pack_factor: 8
+stride: 124
 # Optional multi-dataset list used when mode=cpt_mixed
 datasets: []            # e.g. defined in run_dapt.yaml
 
 # Common model configuration
 model:
-  name: Qwen/Qwen2.5-1.5B-Instruct     # HF repo_id OR local folder path
-  local_dir: models/qwen2.5-1.5b       # where to store/download the model
+  name: google/gemma-3-27b-it     # HF repo_id OR local folder path
+  local_dir: models/gemma-3-27b-it       # where to store/download the model
   revision: main                        # optional: tag/sha
   trust_remote_code: true               # some repos need this
   type: causal
-  max_seq_len: 512
+  max_seq_len: 1024
 
 # Common tuning configuration
 tuning:
@@ -32,7 +32,7 @@ tuning:
 
 train:
   epochs: 3
-  learning_rate: 2e-4
+  learning_rate: 7e-5
   weight_decay: 0.01
   lr_scheduler_type: cosine           # valid values: linear, cosine, cosine_with_restarts, polynomial, constant, constant_with_warmup
   warmup_ratio: 0.06                  # or set num_warmup_steps instead
@@ -43,12 +43,12 @@ train:
   fp16: false
   gradient_checkpointing: true
   batch_size: auto
-  grad_accum: auto
+  grad_accum: 4
 
   # logging / eval / save
   logging_steps: 1                    # see frequent logs in TB
   evaluation_strategy: steps          # HF name in 4.55 is evaluation_strategy
-  eval_steps: 10                      # evaluate every 10 steps to avoid OOM
+  eval_steps: 50                      # evaluate every 10 steps to avoid OOM
   save_strategy: steps
   save_steps: 10                      # save periodically without spamming
   save_total_limit: 3
@@ -56,7 +56,7 @@ train:
   metric_for_best_model: eval_loss
   greater_is_better: false
 
-  output_dir: outputs/run-01
+  output_dir: outputs/run-04
 
 data:
   format: chat

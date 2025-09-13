@@ -231,42 +231,62 @@ class Collator:
                     "labels": torch.tensor(labels)}
 
 # ---------- CPT/DAPT dataset builder ----------
+# ---------- CPT/DAPT dataset builder ----------
+from scripts.datasets_cpt import (
+    load_cpt_dataset,
+    load_chat_dataset_for_cpt,
+)
+
 def build_cpt_or_mixed(cfg, tokenizer):
-    """Build CPT, mixed, or return None for SFT mode."""
-    mode = cfg.get("task_mode", "sft")
-    if mode == "cpt":
-        # Pure CPT mode - single dataset
-        cpt_path = cfg["datasets"][0]["path"]
-        block_size = cfg.get("block_size", 2048)
-        pack_factor = cfg.get("pack_factor", 4)
-        cpt = load_cpt_dataset(cpt_path, tokenizer, block_size=block_size, pack_factor=pack_factor)
-        return cpt, DataCollatorForCausalPairs(tokenizer)
-    elif mode == "cpt_mixed":
-        # Mixed CPT + anchor mode
-        datasets_list = []
-        weights = []
-        block_size = cfg.get("block_size", 2048)
-        pack_factor = cfg.get("pack_factor", 4)
-        
-        for ds_cfg in cfg["datasets"]:
-            if ds_cfg["type"] == "cpt":
-                ds = load_cpt_dataset(ds_cfg["path"], tokenizer, block_size=block_size, pack_factor=pack_factor)
-            elif ds_cfg["type"] == "chat":
-                ds = load_chat_dataset_for_cpt(ds_cfg["path"], tokenizer, block_size=block_size)
-            else:
-                raise ValueError(f"Unknown dataset type: {ds_cfg['type']}")
-            
-            datasets_list.append(ds)
-            weights.append(ds_cfg.get("weight", 1.0))
-        
-        # Normalize weights
-        total_weight = sum(weights)
-        weights = [w / total_weight for w in weights]
-        
-        mixed = interleave_datasets(datasets_list, probabilities=weights, seed=cfg.get("seed", 42))
-        return mixed, DataCollatorForCausalPairs(tokenizer)
-    else:
-        return None, None  # SFT path uses existing code
+    """
+    Build dataset(s) for cpt or cpt_mixed using cfg.
+    Honors per-dataset overrides: path, type, weight, block_size, stride, max_samples.
+    Falls back to top-level block_size/stride if not set in the dataset item.
+    """
+    mode = cfg.get("mode", cfg.get("task_mode", "sft")).lower()
+    if mode not in ("cpt", "cpt_mixed"):
+        return None, None
+
+    # defaults from the run-level cfg
+    default_bs = int(cfg.get("block_size", 2048))
+    default_stride = int(cfg.get("stride", 256))
+    datasets_cfg = cfg.get("datasets", [])
+    if not datasets_cfg:
+        raise ValueError("No datasets configured. Provide cfg['datasets'] with items of type 'cpt' or 'chat'.")
+
+    subsets, weights = [], []
+    for ds_cfg in datasets_cfg:
+        ds_type = str(ds_cfg.get("type", "")).lower()
+        path = ds_cfg.get("path") or ds_cfg.get("jsonl_path")
+        if not path:
+            raise ValueError(f"Dataset entry missing 'path': {ds_cfg}")
+
+        bs = int(ds_cfg.get("block_size", default_bs))
+        st = int(ds_cfg.get("stride", default_stride))
+
+        if ds_type == "cpt":
+            ds = load_cpt_dataset(path, tokenizer, block_size=bs, stride=st)
+        elif ds_type in ("chat", "instr", "anchor"):
+            ds = load_chat_dataset_for_cpt(path, tokenizer, block_size=bs, stride=st)
+        else:
+            raise ValueError(f"Unknown dataset type: {ds_type} (expected 'cpt' or 'chat')")
+
+        max_samples = int(ds_cfg.get("max_samples", 0))
+        if max_samples > 0 and len(ds) > max_samples:
+            ds = ds.select(range(max_samples))
+
+        subsets.append(ds)
+        weights.append(float(ds_cfg.get("weight", 1.0)))
+
+    # Interleave by weights
+    from datasets import interleave_datasets
+    probs = [w / sum(weights) for w in weights]
+    mixed = interleave_datasets(subsets, probabilities=probs, seed=cfg.get("seed", 42))
+
+    # Collator: labels already present (CPT) / masked (chat)
+    from scripts.collators_cpt import DataCollatorForCausalPairs
+    return mixed, DataCollatorForCausalPairs(tokenizer)
+
 
 # ---------- Metric: ROUGE-L (simple) ----------
 def compute_metrics(tokenizer):
@@ -369,12 +389,14 @@ def main():
     ds_train, ds_val, data_collator = None, None, None
     
     cpt_ds, cpt_collator = build_cpt_or_mixed(cfg, tok)
-    if cfg.get("task_mode", "sft") in ("cpt", "cpt_mixed"):
-        # CPT/DAPT mode
-        print(f"[train] Using {cfg.get('task_mode')} mode with {len(cpt_ds)} samples")
+    run_mode = cfg.get("mode", cfg.get("task_mode", "sft")).lower()
+    if run_mode in ("cpt", "cpt_mixed"):
+        print(f"[train] Using {run_mode} mode with {len(cpt_ds)} samples")
         ds_train = cpt_ds
-        ds_val = None  # CPT typically doesn't use validation during training
+        ds_val = None
         data_collator = cpt_collator
+
+
     else:
         # SFT mode (existing path)
         paths = cfg["data"]
@@ -493,7 +515,7 @@ def main():
         per_device_eval_batch_size=max(1, bs),
         gradient_accumulation_steps=accum,
         num_train_epochs=int(cfg["train"]["epochs"]),
-        learning_rate=float(cfg["train"].get("lr", 2e-4)),
+        learning_rate=float(cfg["train"].get("learning_rate", cfg["train"].get("lr", 2e-4))),
         warmup_ratio=float(cfg["train"].get("warmup_ratio", 0.06)),
         weight_decay=float(cfg["train"].get("weight_decay", 0.01)),
         fp16=bool(cfg["train"].get("fp16", True)),
@@ -508,7 +530,8 @@ def main():
 
     # Add eval/save strategies in a version-safe way
     # For CPT/DAPT mode, force no evaluation if no eval dataset
-    if cfg.get("task_mode", "sft") in ("cpt", "cpt_mixed") and ds_val is None:
+    if run_mode in ("cpt", "cpt_mixed") and ds_val is None:
+
         eval_strategy_value = "no"
     else:
         eval_strategy_key = "evaluation_strategy" if "evaluation_strategy" in cfg["train"] else "eval_strategy"

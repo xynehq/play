@@ -1,124 +1,208 @@
 # scripts/datasets_cpt.py
-from datasets import load_dataset
+from typing import List, Tuple, Dict, Any
+from datasets import load_dataset, Dataset
 
-def load_cpt_dataset(jsonl_path, tokenizer, block_size=2048, pack_factor=4, add_eos=True):
-    """Load CPT dataset from JSONL, tokenize, and pack to fixed block_size."""
+# ----------------------------
+# helpers
+# ----------------------------
+def _windowize(ids: List[int], block_size: int, stride: int) -> List[List[int]]:
+    """Slice a long token stream into overlapping windows."""
+    if block_size <= 0:
+        raise ValueError("block_size must be > 0")
+    step = block_size if (stride is None or stride < 0 or stride >= block_size) else (block_size - stride)
+    n = len(ids)
+    if n < block_size:
+        return []
+    return [ids[i:i + block_size] for i in range(0, n - block_size + 1, step)]
+
+def _windowize_with_offset(ids: List[int], block_size: int, stride: int, offset: int) -> List[List[int]]:
+    if block_size <= 0:
+        raise ValueError("block_size must be > 0")
+    step = block_size if (stride is None or stride < 0 or stride >= block_size) else (block_size - stride)
+    n = len(ids)
+    if n < block_size + offset:
+        return []
+    out = []
+    for start in range(offset, n - block_size + 1, step):
+        out.append(ids[start:start + block_size])
+    return out
+
+def _multi_offsets(ids: List[int], block_size: int, stride: int) -> List[List[int]]:
+    """Three staggered passes: 0, 1/4, 1/2 of block_size."""
+    o1 = 0
+    o2 = max(1, block_size // 4)
+    o3 = max(1, block_size // 2)
+    return (
+        _windowize_with_offset(ids, block_size, stride, o1)
+        + _windowize_with_offset(ids, block_size, stride, o2)
+        + _windowize_with_offset(ids, block_size, stride, o3)
+    )
+
+def _sep_ids(tokenizer) -> List[int]:
+    """Separator tokens for global packing. Prefer EOS; else two newlines."""
+    if getattr(tokenizer, "eos_token_id", None) is not None:
+        return [tokenizer.eos_token_id, tokenizer.eos_token_id]
+    return tokenizer("\n\n", add_special_tokens=False)["input_ids"]
+
+# ----------------------------
+# CPT (unsupervised) dataset
+# ----------------------------
+def load_cpt_dataset(
+    jsonl_path: str,
+    tokenizer,
+    block_size: int = 512,
+    pack_factor: int = 4,   # kept for BC (unused with global packing)
+    add_eos: bool = True,
+    stride: int = 256,
+) -> Dataset:
+    """
+    Load raw CPT JSONL and produce *globally packed* overlapping windows
+    with staggered offsets. Accepts {"text": "..."} or {"instruction","input","output"}.
+    """
     ds = load_dataset("json", data_files=jsonl_path, split="train")
-    max_len = block_size * pack_factor
 
-    def tok_fn(batch):
-        # Handle different data formats
+    def tok_batch(batch):
         if "text" in batch:
-            # Raw text format
             texts = batch["text"]
         elif "instruction" in batch:
-            # Instruction format - convert to text
             texts = []
-            for i in range(len(batch["instruction"])):
-                instruction = batch["instruction"][i]
-                input_text = batch.get("input", [""] * len(batch["instruction"]))[i]
-                output_text = batch.get("output", [""] * len(batch["instruction"]))[i]
-                
-                # Create a natural text format for CPT
-                if input_text.strip():
-                    full_text = f"{instruction}\n\nInput: {input_text}\n\nResponse: {output_text}"
-                else:
-                    full_text = f"{instruction}\n\nResponse: {output_text}"
-                texts.append(full_text)
+            N = len(batch["instruction"])
+            for i in range(N):
+                instr = batch["instruction"][i] or ""
+                inpt  = batch.get("input",  [""] * N)[i] or ""
+                out   = batch.get("output", [""] * N)[i] or ""
+                text = f"{instr}\n\nInput: {inpt}\n\nResponse: {out}" if inpt.strip() else f"{instr}\n\nResponse: {out}"
+                texts.append(text)
         else:
-            raise ValueError(f"Unsupported data format. Expected 'text' or 'instruction' fields. Got: {list(batch.keys())}")
-        
+            raise ValueError(f"Unsupported fields: {list(batch.keys())}")
+
         if add_eos and tokenizer.eos_token:
             texts = [t + tokenizer.eos_token for t in texts]
-        out = tokenizer(texts, truncation=True, max_length=max_len, add_special_tokens=False)
-        return out
 
-    tokenized = ds.map(tok_fn, batched=True, remove_columns=ds.column_names)
+        toks = tokenizer(
+            texts,
+            add_special_tokens=False,
+            truncation=False,              # keep full text, we pack later
+            return_attention_mask=False,
+        )
+        return {"input_ids": toks["input_ids"]}
 
-    def group_texts(examples):
-        concatenated = {k: sum(examples[k], []) for k in examples.keys()}
-        total_len = len(concatenated["input_ids"])
-        total_len = (total_len // block_size) * block_size
-        result = {
-            k: [t[i:i+block_size] for i in range(0, total_len, block_size)]
-            for k, t in concatenated.items()
-        }
-        result["labels"] = result["input_ids"].copy()
-        return result
+    tokenized = ds.map(tok_batch, batched=True, remove_columns=ds.column_names)
 
-    tokenized = tokenized.map(group_texts, batched=True)
-    return tokenized
+    # ---- GLOBAL PACK ACROSS ALL EXAMPLES ----
+    sep = _sep_ids(tokenizer)
+    all_ids: List[int] = []
+    for ids in tokenized["input_ids"]:
+        if not ids:
+            continue
+        all_ids.extend(ids)
+        all_ids.extend(sep)  # boundary between docs
 
-def load_chat_dataset_for_cpt(jsonl_path, tokenizer, block_size=2048):
-    """Load chat dataset and prepare for CPT mixing (with proper label masking)."""
+    # Multi-offset windowing (more samples from tiny corpora)
+    x_windows = _multi_offsets(all_ids, block_size, stride)
+
+    if not x_windows:
+        # fallback: per-example windowing (extremely small corpora)
+        for ids in tokenized["input_ids"]:
+            x_windows.extend(_multi_offsets(ids, block_size, stride))
+
+    y_windows = [w[:] for w in x_windows]  # LM target = input
+    return Dataset.from_dict({"input_ids": x_windows, "labels": y_windows})
+
+# ----------------------------
+# Chat (anchors) formatted for CPT-mix
+# ----------------------------
+def load_chat_dataset_for_cpt(
+    jsonl_path: str,
+    tokenizer,
+    block_size: int = 512,
+    stride: int = 256,
+) -> Dataset:
+    """
+    Loads {"instruction","input","output"} anchors.
+    Formats with chat template, masks user tokens (-100), then *globally packs*
+    with staggered offsets for BOTH inputs and labels.
+    """
     ds = load_dataset("json", data_files=jsonl_path, split="train")
-    
-    def tok_map(batch):
-        input_ids, labels = [], []
-        
-        for i in range(len(batch["instruction"])):
-            # Build conversation in chat format
-            instr = batch["instruction"][i].strip()
-            inpt = batch.get("input", [""] * len(batch["instruction"]))[i].strip()
-            output = batch.get("output", [""] * len(batch["instruction"]))[i].strip()
-            
-            # Create user message
-            user_content = f"{instr}\n{inpt}".strip() if inpt else instr
-            conversation = [
-                {"role": "user", "content": user_content},
-                {"role": "assistant", "content": output}
-            ]
-            
-            # Apply chat template if available
-            if hasattr(tokenizer, 'chat_template') and tokenizer.chat_template:
-                try:
-                    formatted_text = tokenizer.apply_chat_template(
-                        conversation, 
-                        tokenize=False, 
-                        add_generation_prompt=False
-                    )
-                except Exception:
-                    # Fallback to simple format if template fails
-                    formatted_text = f"<|user|>\n{user_content}<|end|>\n<|assistant|>\n{output}<|end|>\n"
-            else:
-                # Fallback format when no chat template
-                formatted_text = f"<|user|>\n{user_content}<|end|>\n<|assistant|>\n{output}<|end|>\n"
-            
-            # Tokenize the full conversation
-            full_tokens = tokenizer(formatted_text, add_special_tokens=True, truncation=True, max_length=block_size)
-            full_ids = full_tokens["input_ids"]
-            
-            # Find where assistant response starts for label masking
-            # Tokenize just the user part to find the boundary
-            user_part = formatted_text.split("<|assistant|>")[0] + "<|assistant|>\n"
-            user_tokens = tokenizer(user_part, add_special_tokens=True)
-            user_len = len(user_tokens["input_ids"])
-            
-            # Create labels: mask user part (-100), supervise assistant part
-            lab = [-100] * user_len + full_ids[user_len:]
-            
-            # Ensure same length
-            if len(lab) > len(full_ids):
-                lab = lab[:len(full_ids)]
-            elif len(lab) < len(full_ids):
-                lab.extend(full_ids[len(lab):])
-            
-            input_ids.append(full_ids)
-            labels.append(lab)
-        
-        return {"input_ids": input_ids, "labels": labels}
 
-    tokenized = ds.map(tok_map, batched=True, remove_columns=ds.column_names)
-    
-    def group_texts(examples):
-        concatenated = {k: sum(examples[k], []) for k in examples.keys()}
-        total_len = len(concatenated["input_ids"])
-        total_len = (total_len // block_size) * block_size
-        result = {
-            k: [t[i:i+block_size] for i in range(0, total_len, block_size)]
-            for k, t in concatenated.items()
-        }
-        return result
+    def format_one(instr: str, inpt: str, output: str) -> Tuple[List[int], List[int]]:
+        instr  = (instr or "").strip()
+        inpt   = (inpt  or "").strip()
+        output = (output or "").strip()
 
-    tokenized = tokenized.map(group_texts, batched=True)
-    return tokenized
+        user = f"{instr}\n{inpt}".strip() if inpt else instr
+        conv = [{"role": "user", "content": user},
+                {"role": "assistant", "content": output}]
+
+        # format with chat template when available
+        if getattr(tokenizer, "chat_template", None):
+            try:
+                text = tokenizer.apply_chat_template(conv, tokenize=False, add_generation_prompt=False)
+            except Exception:
+                text = f"<|user|>\n{user}<|end|>\n<|assistant|>\n{output}<|end|>\n"
+        else:
+            text = f"<|user|>\n{user}<|end|>\n<|assistant|>\n{output}<|end|>\n"
+
+        user_part = text.split("<|assistant|>")[0] + "<|assistant|>\n"
+        full_ids  = tokenizer(text, add_special_tokens=True, truncation=False)["input_ids"]
+        user_len  = len(tokenizer(user_part, add_special_tokens=True)["input_ids"])
+
+        labels = [-100] * user_len + full_ids[user_len:]
+        # pad/trim to equal length
+        if len(labels) > len(full_ids):
+            labels = labels[:len(full_ids)]
+        elif len(labels) < len(full_ids):
+            labels += full_ids[len(labels):]
+        return full_ids, labels
+
+    # tokenize all, then global pack with masked separators
+    sep = _sep_ids(tokenizer)
+    all_x: List[int] = []
+    all_y: List[int] = []
+
+    for ex in ds:
+        x, y = format_one(ex.get("instruction", ""), ex.get("input", ""), ex.get("output", ""))
+        if not x:
+            continue
+        all_x.extend(x)
+        all_y.extend(y)
+        # add neutral separator (mask labels for separator)
+        all_x.extend(sep)
+        all_y.extend([-100] * len(sep))
+
+    # Multi-offset windowing for BOTH x and y (keep alignment)
+    x_windows = _multi_offsets(all_x, block_size, stride)
+    y_windows = _multi_offsets(all_y, block_size, stride)
+
+    n = min(len(x_windows), len(y_windows))
+    if n == 0:
+        # fallback: per-example windowing with offsets
+        x_windows, y_windows = [], []
+        for ex in ds:
+            x, y = format_one(ex.get("instruction",""), ex.get("input",""), ex.get("output",""))
+            xs = _multi_offsets(x, block_size, stride)
+            ys = _multi_offsets(y, block_size, stride)
+            for xi, yi in zip(xs, ys):
+                x_windows.append(xi); y_windows.append(yi)
+        n = len(x_windows)
+
+    return Dataset.from_dict({"input_ids": x_windows[:n], "labels": y_windows[:n]})
+
+# ----------------------------
+# Convenience: read params from config dict
+# ----------------------------
+def load_cpt_dataset_from_cfg(cfg: Dict[str, Any], tokenizer) -> Dataset:
+    bs = int(cfg.get("block_size", 512))
+    st = int(cfg.get("stride", 256))
+    path = cfg.get("path") or cfg.get("jsonl_path")
+    if not path:
+        raise ValueError("CPT cfg must include 'path' to a JSONL file.")
+    return load_cpt_dataset(jsonl_path=path, tokenizer=tokenizer, block_size=bs, stride=st)
+
+def load_chat_dataset_for_cpt_from_cfg(cfg: Dict[str, Any], tokenizer) -> Dataset:
+    bs = int(cfg.get("block_size", 512))
+    st = int(cfg.get("stride", 256))
+    path = cfg.get("path") or cfg.get("jsonl_path")
+    if not path:
+        raise ValueError("Chat cfg must include 'path' to a JSONL file.")
+    return load_chat_dataset_for_cpt(jsonl_path=path, tokenizer=tokenizer, block_size=bs, stride=st)

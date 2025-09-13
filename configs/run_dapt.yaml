@@ -3,36 +3,81 @@ include: configs/config_base.yaml
 # DAPT-specific overrides
 task_mode: cpt_mixed             # Enable mixed CPT + instruction training
 
+
+# Packing for CPT/DAPT
+block_size: 256
+stride: 128                       # ~50% overlap
+pack_factor: 8                    # kept for BC (not used with windowing)
+
 model:
-  name: Qwen/Qwen2.5-1.5B-Instruct  # Use smaller model for testing
-  max_seq_len: 1024              # Moderate sequence length for testing
+  name: google/gemma-3-27b-it
+  local_dir: models/gemma-3-27b-it
+  revision: main
+  trust_remote_code: true
+  type: causal
+  max_seq_len: 1024    
+
+# model:
+#   name: google/gemma-3-27b-it  # Use smaller model for testing
+#   max_seq_len: 1024              # Moderate sequence length for testing
 
 tuning:
   backend: bnb
   lora:
-    r: 16                        # Smaller rank for DAPT
-    alpha: 32
-    target_modules: [q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj]
+    r: 16
+    alpha: 64
+    dropout: 0.1
+    target_modules: [q_proj, k_proj, v_proj, o_proj]   # attention-only
+  
 
 # Mix CPT + anchor at train-time
 datasets:
   - name: dpip_cpt
     path: data/processed/dpip_cpt.jsonl
     type: cpt
-    weight: 0.9
+    weight: 0.75
   - name: anchor_instr
     path: data/processed/anchor_instr.jsonl
     type: chat
-    weight: 0.1
+    weight: 0.25
+
+# train:
+#   epochs: 3                      #  for DAPT
+#   learning_rate: 7e-5         # Lower learning rate
+#   warmup_ratio: 0.03
+#   evaluation_strategy: "no"      # No evaluation for DAPT
+#   eval_strategy: "no"            # Ensure both variants are set
+#   save_strategy: "steps"         # Keep save strategy as steps
+#   load_best_model_at_end: false
+#   logging_steps: 25
+#   #save_steps: 100
+#   output_dir: outputs/run-dapt
+#   max_steps: 300                # Limit max steps for testing
 
 train:
-  epochs: 1                      # Single epoch for DAPT
-  learning_rate: 1.0e-4          # Lower learning rate
-  warmup_ratio: 0.03
-  evaluation_strategy: "no"      # No evaluation for DAPT
-  eval_strategy: "no"            # Ensure both variants are set
-  save_strategy: "steps"         # Keep save strategy as steps
+  output_dir: outputs/run-dapt-5
+  overwrite_output_dir: true
+
+  epochs: 5 
+
+  # force useful optimization
+  #max_steps: 1000                # <-- correct key; gives you real updates
+  learning_rate: 3e-4
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.2
+  optim: adamw_torch
+  # batch shape (2x H200 is comfy)
+  per_device_train_batch_size: 2
+  grad_accum: 8               # effective batch ~8 seq/step
+
+  # stability
+  gradient_checkpointing: true
+  max_grad_norm: 0.5
+  bf16: false
+  fp16: true
+
+  logging_steps: 20
+  save_steps: 200
+  evaluation_strategy: "no"
   load_best_model_at_end: false
-  logging_steps: 25
-  save_steps: 500
-  output_dir: outputs/run-dapt
+  report_to: ["tensorboard"]

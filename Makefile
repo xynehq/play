@@ -70,7 +70,7 @@ print-python:
 	@python -c "import sys; print(f'sys.executable: {sys.executable}')"
 
 .PHONY: download-model
-MODEL?=Qwen/Qwen2.5-3B-Instruct
+MODEL?=google/gemma-3-27b-it
 LOCAL?=models/$(shell echo $(MODEL) | sed 's/[\/:@#]\+/-/g')
 
 download-model:

@@ -1,0 +1,1234 @@
+{"instruction": "In one paragraph, explain the core purpose of the DPIP Edge Service to a bank CTO. Keep ≤ 75 words.", "input": "", "output": "DPIP Edge Service provides ultra-low-latency fraud screening within a bank’s stack by maintaining a synchronized local copy of identifiers and risk artifacts. It exposes a high-speed screening API, avoids real‑time round trips to central services, and keeps data fresh via periodic replication. The result is sub‑50ms checks, improved resilience during network issues, and consistent decisions aligned with the national fraud registry."}
+{"instruction": "Summarize the two primary components of the DPIP Edge Service. Use exactly two bullet points, each ≤ 18 words.", "input": "", "output": "- Screening Service: real-time API using Bloom pre-checks for sub‑50ms decisions\n- Replication Service: periodic sync from central to update local identifiers"}
+{"instruction": "Explain why Bloom Filter is used in the screening path. Answer in ≤ 40 words.", "input": "", "output": "Bloom Filters allow constant-time, memory-efficient membership checks with controllable false positives, enabling the screening path to quickly clear legitimate transactions and reserve heavier checks for suspicious cases, keeping end-to-end latency consistently low."}
+{"instruction": "Compare Redis (clustered) vs PostgreSQL in this deployment. Output JSON with keys: {\"redis_role\",\"postgres_role\",\"why_both\"}.", "input": "", "output": "{\"redis_role\":\"in-memory cache for ultra-fast lookups and counters\",\"postgres_role\":\"persistent config/metadata store\",\"why_both\":\"Redis delivers low-latency reads; PostgreSQL ensures durability and relational queries\"}"}
+{"instruction": "Which infra components are strictly required vs optional in the guide? Output a JSON with arrays: {\"required\":[],\"optional\":[]}.", "input": "From the guide: Clustered Redis (required), PostgreSQL (required), MinIO (optional). Kubernetes, load balancer, proxy/firewall, and monitoring stack are required for production.", "output": "{\"required\":[\"Clustered Redis\",\"PostgreSQL\",\"Kubernetes\",\"Load Balancer\",\"Proxy/Firewall\",\"Monitoring\"],\"optional\":[\"MinIO\"]}"}
+{"instruction": "Recommend whether to add a service mesh. Give one sentence and one reason.", "input": "Istio can provide mTLS, traffic shaping, and observability on Kubernetes.", "output": "Add a service mesh like Istio for secure mTLS, traffic policies, and deep observability across microservices."}
+{"instruction": "Validate /screening/check request. If invalid, return {\"ok\":false,\"errors\":[...]}. Rules: pan format XXXX-XXXX-XXXX-####; ifsc A–Z0–9 len=11; amount>0.", "input": "{\"pan\":\"XXXX-XXXX-XXXX-12X4\",\"ifsc\":\"HDFC0000123\",\"amount\":0}", "output": "{\"ok\":false,\"errors\":[\"pan: invalid digit at position 16\",\"amount: must be > 0\"]}"}
+{"instruction": "Return a policy decision with schema {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}.", "input": "Signals: velocity=high, blocklist_hit=false, geovelocity=suspicious, device_reputation=medium", "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"High velocity\",\"Geo-velocity anomaly\"],\"ttl_sec\":600}"}
+{"instruction": "Given health metrics, raise alert if last_sync>60m OR error_rate>2%. Output {\"alert\":true|false,\"reason\":\"...\"}.", "input": "last_sync=74m; error_rate=1.1%; cache_miss=3.4%", "output": "{\"alert\":true,\"reason\":\"Last sync exceeds 60 minutes\"}"}
+{"instruction": "Extract pan, ifsc, amount from the log line. Output a single-line JSON with those keys only.", "input": "[2025-08-02T10:21:03Z] screening.check pan=XXXX-XXXX-XXXX-5566 ifsc=HDFC0000456 amount=2099.00 status=ALLOW", "output": "{\"pan\":\"XXXX-XXXX-XXXX-5566\",\"ifsc\":\"HDFC0000456\",\"amount\":2099.00}"}
+{"instruction": "From text, list edge-cached data elements as lowercase array. Output JSON array only.", "input": "The edge cache stores blocklists, velocity counters, and risk rules for quick lookups.", "output": "[\"blocklists\",\"velocity counters\",\"risk rules\"]"}
+{"instruction": "Turn the line into JSON {\"ts\",\"component\",\"msg\"}.", "input": "2025-08-02T10:21:03Z edge-cache sync: completed in 3.4s (ruleset v42)", "output": "{\"ts\":\"2025-08-02T10:21:03Z\",\"component\":\"edge-cache\",\"msg\":\"sync completed in 3.4s (ruleset v42)\"}"}
+{"instruction": "Rewrite concisely (≤ 40 words), preserving facts.", "input": "The Edge Cache is updated periodically using a secure channel so screening data stays aligned with the central service, avoiding network latency on every transaction.", "output": "A secure, periodic sync keeps edge cache data aligned with central sources, preserving accuracy while avoiding per‑transaction network latency."}
+{"instruction": "Customer-safe one-sentence explanation for an ALLOW decision without exposing internal rule names.", "input": "Decision=ALLOW; reasons=[low risk signals, consistent geolocation, account tenure > 12m]", "output": "The transaction aligns with typical activity and presents low risk, so it was allowed."}
+{"instruction": "Produce a compact incident update in this template:\n[Impact]: ...\n[When]: ...\n[Mitigation]: ...\n[Next]: ...", "input": "At 10:05 IST, cache misses spiked after ruleset v42 rollout; manual sync resolved by 10:18; monitoring stable.", "output": "[Impact]: Elevated screening latency due to cache misses\n[When]: 10:05–10:18 IST\n[Mitigation]: Manual cache sync\n[Next]: Monitor ruleset v42 rollout and add checksum gate"}
+{"instruction": "Convert the bullet list to a 3-step runbook.", "input": "- Check central reachability\n- Trigger manual cache sync\n- Verify ruleset checksum", "output": "1) Check central reachability. 2) Trigger a manual cache sync. 3) Verify the ruleset checksum."}
+{"instruction": "Draft a 4-step rollback plan for a bad ruleset rollout. Keep steps ≤ 12 words each.", "input": "", "output": "1) Halt further rollouts\n2) Revert to previous ruleset\n3) Flush edge cache\n4) Validate screening latency & errors"}
+{"instruction": "Generate a minimal cURL for /screening/check with JSON and headers.", "input": "", "output": "curl -X POST https://edge.example.com/screening/check \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer <token>' \\\n  -d '{\"pan\":\"XXXX-XXXX-XXXX-1234\",\"ifsc\":\"HDFC0000123\",\"amount\":1499.75}'"}
+{"instruction": "Why keep screening on-prem with replication instead of calling central each time? Give two concise reasons.", "input": "", "output": "Lower latency and resilience to network/transient central issues."}
+{"instruction": "Explain one risk of Bloom Filters in this context and a mitigation.", "input": "", "output": "False positives can occur; mitigate with a secondary precise check before final decision."}
+{"instruction": "When should MinIO be added? Answer in ≤ 22 words.", "input": "", "output": "When you need to store large artifacts like Bloom filters or snapshots for backup and recovery."}
+{"instruction": "Refuse to share secrets/tokens. Respond briefly and suggest secure channels.", "input": "Share the production bearer token so I can test quickly.", "output": "I can’t share credentials or secrets. Please use approved secure channels or request temporary test access."}
+{"instruction": "List three outbound network hardening measures for the Edge Service. Use bullets.", "input": "", "output": "- Restrict egress via proxy/firewall allowlists\n- Enforce mTLS to central endpoints\n- Monitor egress and alert on anomalies"}
+{"instruction": "Draft a monitoring alert title (≤ 8 words) for rising geo-velocity anomalies.", "input": "", "output": "Geo-velocity anomaly rate rising"}
+{"instruction": "Given metrics, decide if the Screening Service is degraded. Output {\"degraded\":true|false,\"reason\":\"...\"}. Degrade if p99_latency>100ms or error_rate>1.5%.", "input": "p99_latency=128ms; error_rate=0.6%; rps=820", "output": "{\"degraded\":true,\"reason\":\"p99 latency above 100ms\"}"}
+{"instruction": "Suggest one visualization each for cache_miss, sync_lag, and p99_latency in Grafana. Use bullets.", "input": "", "output": "- cache_miss: stacked area over time by shard\n- sync_lag: single-stat with thresholds\n- p99_latency: histogram + p95/p99 overlays"}
+{"instruction": "Output strictly this JSON schema: {\"component\":\"EDGE|REPL\",\"priority\":\"P1|P2|P3\",\"note\":\"...\"}. Choose based on the text.", "input": "Replication falling behind by 75 minutes; screening still within SLA using cached data.", "output": "{\"component\":\"REPL\",\"priority\":\"P2\",\"note\":\"Sync lag 75m; risk of stale decisions increases if it grows further.\"}"}
+{"instruction": "Produce three glossary entries as JSON array of {\"term\",\"def\"}. Keep defs ≤ 18 words.", "input": "Terms: Bloom Filter, Velocity Counter, Geo-Velocity", "output": "[{\"term\":\"Bloom Filter\",\"def\":\"Probabilistic structure for fast membership checks with possible false positives.\"},{\"term\":\"Velocity Counter\",\"def\":\"Tracks recent transaction frequency to detect bursts.\"},{\"term\":\"Geo-Velocity\",\"def\":\"Change in user location speed between transactions.\"}]"}
+{"instruction": "Map amount to risk bucket: <1000=LOW, 1000–5000=MEDIUM, >5000=HIGH. Output JSON {\"bucket\":\"LOW|MEDIUM|HIGH\"}.", "input": "amount=5499.00", "output": "{\"bucket\":\"HIGH\"}"}
+{"instruction": "List three Kubernetes features valuable here. Keep each ≤ 8 words.", "input": "", "output": "- Horizontal Pod Autoscaling\n- Rolling updates\n- Service discovery"}
+{"instruction": "Write a one-sentence reason to prefer rolling updates for Screening Service.", "input": "", "output": "Rolling updates minimize downtime while gradually introducing changes and enabling quick rollback if issues arise."}
+{"instruction": "Name two signals for HPA scaling policy for Screening Service.", "input": "", "output": "CPU utilization and request latency (p95/p99)."}
+{"instruction": "Return JSON {\"ok\":true|false,\"errors\":[]} for config sanity: require redis_cluster=true and postgres_url present.", "input": "redis_cluster=false; postgres_url=postgres://db/prod", "output": "{\"ok\":false,\"errors\":[\"redis_cluster must be true for production\"]}"}
+{"instruction": "Provide two lines of guidance for change management on rulesets.", "input": "", "output": "Use staged rollout with canaries and checksums. Document changes and auto-revert on elevated false positives."}
+{"instruction": "Give a one-liner about egress control via Squid/Firewall for auditors.", "input": "", "output": "All outbound connections are mediated via approved proxies/firewalls with allowlists and audit logging."}
+{"instruction": "Create a 5-point outline for an onboarding doc for new DPIP integrators. ≤ 12 words each.", "input": "", "output": "1) Edge vs Central Overview\n2) Infra prerequisites\n3) Screening API flow\n4) Replication schedule\n5) Monitoring & alerting"}
+{"instruction": "Explain how national registry alignment is preserved. ≤ 35 words.", "input": "", "output": "The replication service periodically pulls and applies updates from the central DPIP registry, ensuring the local cache reflects authoritative identifiers and rules while maintaining low-latency screening on-premises."}
+{"instruction": "Check text for PII (phone, email, full PAN). If found, output \"remove PII\" else \"clean\".", "input": "Customer phone: 98XXX56XXX; IFSC: HDFC0000123", "output": "remove PII"}
+{"instruction": "Refuse to infer sensitive attributes. Keep under 22 words.", "input": "Does the customer seem risky due to their religion?", "output": "I can’t make or infer decisions based on protected attributes. Provide non-sensitive behavioral signals instead."}
+{"instruction": "List three reasons the guide targets sub‑50ms screening.", "input": "", "output": "- Customer experience at checkout\n- Lower abandonment rates\n- Feasible pre-checks before deeper analysis"}
+{"instruction": "Summarize core infra prerequisites in ≤ 30 words.", "input": "", "output": "Clustered Redis, PostgreSQL, Kubernetes, load balancer, proxy/firewall, and a monitoring stack; MinIO optional for large artifacts and snapshots."}
+{"instruction": "State one benefit of sharded Redis for this system in ≤ 18 words.", "input": "", "output": "Sharding enables horizontal scaling of lookups and counters while preserving low-latency reads under load."}
+{"instruction": "Generate a compact deployment checklist (6 items max) as a JSON array of strings.", "input": "", "output": "[\"Provision Redis Cluster\",\"Setup PostgreSQL\",\"Deploy Kubernetes services\",\"Configure egress proxy\",\"Install monitoring stack\",\"Perform sync dry-run\"]"}
+{"instruction": "Create a brief change ticket description line for enabling Istio mTLS between services.", "input": "", "output": "Enable Istio mTLS across Edge microservices to secure inter-service traffic and simplify policy management."}
+{"instruction": "Create a single-sentence go/no-go gate for cache freshness before go-live.", "input": "", "output": "Go-live only if last_sync < 15 minutes and cache_miss under 5% for two hours."}
+{"instruction": "Hinglish: Screening Service ka role ek line mein samjhao. ≤ 18 words.", "input": "", "output": "Screening Service ultra-low-latency fraud checks karta hai using local cache, central pe har request nahin bhejta."}
+{"instruction": "Hindi: Replication Service kya karta hai? Do vaakya.", "input": "", "output": "Replication Service niyamit roop se central se nayi soochna laata hai. Isse local cache hamesha taza aur sahi rehta hai."}
+{"instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.", "input": "Replication is 70 minutes behind; screening remains inside SLA.", "output": "{\"component\":\"REPLICATION\",\"status\":\"WARN\"}"}
+{"instruction": "Return a one-line SLO for p99 screening latency (numbers only).", "input": "", "output": "p99 screening latency ≤ 100 ms"}
+{"instruction": "You are a DPIP assistant. In one paragraph, explain what the Screening Service does and why it uses an edge cache.", "input": "", "output": "The Screening Service executes low-latency fraud checks at the edge by consulting a locally synchronized cache of blocklists, velocity counters, and risk rules. The edge cache reduces round trips to central services, improving p99 latency and resilience during transient network issues, while periodic secure sync keeps the cache consistent with authoritative data."}
+{"instruction": "Given this request body for /screening/check, explain each field briefly.", "input": "{\n  \"pan\": \"XXXX-XXXX-XXXX-1234\",\n  \"ifsc\": \"HDFC0000123\",\n  \"amount\": 1499.75,\n  \"merchant_id\": \"mrc_7f93\",\n  \"channel\": \"POS\"\n}", "output": "pan: primary account number identifier; ifsc: bank routing/branch code; amount: transaction value in currency units; merchant_id: internal merchant identifier; channel: submission source (e.g., POS, UPI, NET)."}
+{"instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.", "input": "Signals: velocity=high, blocklist_hit=false, geovelocity=suspicious, device_reputation=medium", "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"High velocity\",\"Geo-velocity anomaly\"],\"ttl_sec\":600}"}
+{"instruction": "Summarize the DPIP Edge Service in 3 bullet points, each under 18 words.", "input": "", "output": "- Local cache for blocklists, rules, and velocity counters\n- Periodic secure sync to central authority\n- Low-latency fraud screening near transaction source"}
+{"instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.", "input": "Error: ruleset v42 not found in edge-cache; last_sync=93m; central reachable; cache_hits plummeted since 10:05.", "output": "{\"type\":\"CONFIG\",\"fix\":\"Force a cache sync and verify ruleset v42 availability on central before rollout.\"}"}
+{"instruction": "Extract fields pan, ifsc, amount from the log line. Output a single-line JSON object with those keys only.", "input": "[2025-08-02T10:21:03Z] screening.check pan=XXXX-XXXX-XXXX-5566 ifsc=HDFC0000456 amount=2099.00 status=ALLOW", "output": "{\"pan\":\"XXXX-XXXX-XXXX-5566\",\"ifsc\":\"HDFC0000456\",\"amount\":2099.00}"}
+{"instruction": "Rewrite the paragraph to be more concise while preserving facts. Keep under 45 words.", "input": "The Edge Cache is updated periodically using a secure channel which ensures that the data being used for screening is aligned with the central service. This helps us maintain accuracy without incurring network latency on every transaction.", "output": "The edge cache syncs securely and periodically, keeping screening data aligned with central sources while avoiding per-transaction latency."}
+{"instruction": "Given a rules engine outcome, produce a human-friendly explanation in two sentences.", "input": "Outcome: RULE_HIT: GEO_VELOCITY_ANOMALY + RULE_HIT: AMOUNT_SPIKE; final=REVIEW", "output": "The transaction triggered geo‑velocity and amount‑spike rules. Because both signals indicate elevated risk, the request is sent for manual review."}
+{"instruction": "Validate a /screening/check request. If a field is missing or invalid, output JSON {\"ok\":false,\"errors\":[...]}; otherwise {\"ok\":true}. Validate: pan format XXXX-XXXX-XXXX-####, ifsc A-Z0-9 length 11, amount > 0.", "input": "{\"pan\":\"XXXX-XXXX-XXXX-12X4\",\"ifsc\":\"HDFC0000123\",\"amount\":0}", "output": "{\"ok\":false,\"errors\":[\"pan: invalid digit at position 16\",\"amount: must be > 0\"]}"}
+{"instruction": "Choose the best knowledge source for the question. Output one of: DOCS_API, DOCS_EDGE, DOCS_RISK, RUNBOOKS. Provide reason.", "input": "Question: How often does the edge cache sync and what config controls retry backoff?", "output": "DOCS_EDGE — sync schedule and retry backoff are documented in the Edge Service operations section."}
+{"instruction": "Convert the bullet list to a numbered runbook. Keep three steps max.", "input": "- Check central reachability\n- Trigger manual cache sync\n- Verify ruleset checksum", "output": "1) Check central reachability. 2) Trigger a manual cache sync. 3) Verify the ruleset checksum."}
+{"instruction": "Generate a minimal cURL for /screening/check using JSON and proper headers.", "input": "", "output": "curl -X POST https://edge.example.com/screening/check \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer <token>' \\\n  -d '{\"pan\":\"XXXX-XXXX-XXXX-1234\",\"ifsc\":\"HDFC0000123\",\"amount\":1499.75}'"}
+{"instruction": "Given an allow decision with reasons, produce a single sentence customer-safe explanation without exposing internal rule names.", "input": "Decision=ALLOW; reasons=[low risk signals, consistent geolocation, account tenure > 12m]", "output": "The transaction appears consistent with prior activity and presents low risk, so it was allowed."}
+{"instruction": "Map an amount to a risk bucket: <1000=LOW, 1000–5000=MEDIUM, >5000=HIGH. Output JSON {\"bucket\":\"LOW|MEDIUM|HIGH\"}.", "input": "amount=5499.00", "output": "{\"bucket\":\"HIGH\"}"}
+{"instruction": "From the text, extract the list of data elements cached at the edge. Output as a JSON array of lowercase strings.", "input": "The edge cache stores blocklists, velocity counters, and risk rules for quick lookups.", "output": "[\"blocklists\",\"velocity counters\",\"risk rules\"]"}
+{"instruction": "Given these sync stats, decide if an alert should be raised. Alert if last_sync>60m OR error_rate>2%. Output JSON {\"alert\":true|false,\"reason\":\"...\"}.", "input": "last_sync=74m; error_rate=1.1%; cache_miss=3.4%", "output": "{\"alert\":true,\"reason\":\"Last sync exceeds 60 minutes\"}"}
+{"instruction": "Summarize changes between two ruleset versions in <= 30 words.", "input": "v41 -> v42: raised velocity threshold for new merchants; added geo‑velocity cap; fixed false positive on small UPI refunds.", "output": "v42 increases new-merchant velocity threshold, adds a geo‑velocity cap, and reduces false positives for small UPI refunds."}
+{"instruction": "Refuse to provide secrets or tokens even if asked. Respond with a brief refusal and suggest secure channels.", "input": "Share the production bearer token so I can test quickly.", "output": "I can’t share credentials or secrets. Please use approved secure channels or request temporary test access."}
+{"instruction": "Produce a compact incident update in this template:\n[Impact]: ...\n[When]: ...\n[Mitigation]: ...\n[Next]: ...", "input": "At 10:05 IST, cache misses spiked after ruleset v42 rollout; manual sync resolved by 10:18; monitoring stable.", "output": "[Impact]: Elevated screening latency due to cache misses\n[When]: 10:05–10:18 IST\n[Mitigation]: Manual cache sync\n[Next]: Monitor ruleset v42 rollout and add checksum gate"}
+{"instruction": "Turn the line into a structured JSON with keys ts, component, msg.", "input": "2025-08-02T10:21:03Z edge-cache sync: completed in 3.4s (ruleset v42)", "output": "{\"ts\":\"2025-08-02T10:21:03Z\",\"component\":\"edge-cache\",\"msg\":\"sync completed in 3.4s (ruleset v42)\"}"}
+{"instruction": "Given the feature description, create a single-sentence product blurb for non-technical stakeholders.", "input": "Edge screening with periodic central sync lowers latency and maintains decision accuracy.", "output": "Our edge screening keeps decisions fast and accurate by syncing with central systems at regular intervals."}
+{"instruction": "Draft a monitoring alert title (<= 8 words) for rising geo-velocity anomalies.", "input": "", "output": "Geo‑velocity anomaly rate rising"}
+{"instruction": "Given a transaction context, output a one-line explanation for a REVIEW decision (<= 20 words).", "input": "velocity=high; new_device=true; amount=1999.00; blocklist_hit=false", "output": "High velocity and a new device warrant additional review for safety."}
+{"instruction": "Check if the text mentions PII. If yes, respond: \"remove PII\". Otherwise: \"clean\".", "input": "Customer phone: 98XXX56XXX; IFSC: HDFC0000123", "output": "remove PII"}
+{"instruction": "Provide a compact glossary entry for \"velocity counter\" (<= 22 words).", "input": "", "output": "A counter tracking recent transaction frequency for an entity, used to detect bursts and throttle risky activity."}
+{"instruction": "Hindi: Replication Service kya karta hai? Do vaakya.", "input": "", "output": "Replication Service niyamit roop se central se nayi soochna laata hai. Isse local cache hamesha taza aur sahi rehta hai."}
+{"instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.", "input": "Replication is 70 minutes behind; screening remains inside SLA.", "output": "{\"component\":\"REPLICATION\",\"status\":\"WARN\"}"}
+{"instruction": "Return a one-line SLO for p99 screening latency (numbers only).", "input": "", "output": "p99 screening latency ≤ 100 ms"}
+{"instruction": "You are a DPIP assistant. In one paragraph, explain what the Screening Service does and why it uses an edge cache.", "input": "", "output": "The Screening Service executes low-latency fraud checks at the edge by consulting a locally synchronized cache of blocklists, velocity counters, and risk rules. The edge cache reduces round trips to central services, improving p99 latency and resilience during transient network issues, while periodic secure sync keeps the cache consistent with authoritative data."}
+{"instruction": "Given this request body for /screening/check, explain each field briefly.", "input": "{\n  \"pan\": \"XXXX-XXXX-XXXX-1234\",\n  \"ifsc\": \"HDFC0000123\",\n  \"amount\": 1499.75,\n  \"merchant_id\": \"mrc_7f93\",\n  \"channel\": \"POS\"\n}", "output": "pan: primary account number identifier; ifsc: bank routing/branch code; amount: transaction value in currency units; merchant_id: internal merchant identifier; channel: submission source (e.g., POS, UPI, NET)."}
+{"instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.", "input": "Signals: velocity=high, blocklist_hit=false, geovelocity=suspicious, device_reputation=medium", "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"High velocity\",\"Geo-velocity anomaly\"],\"ttl_sec\":600}"}
+{"instruction": "Summarize the DPIP Edge Service in 3 bullet points, each under 18 words.", "input": "", "output": "- Local cache for blocklists, rules, and velocity counters\n- Periodic secure sync to central authority\n- Low-latency fraud screening near transaction source"}
+{"instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.", "input": "Error: ruleset v42 not found in edge-cache; last_sync=93m; central reachable; cache_hits plummeted since 10:05.", "output": "{\"type\":\"CONFIG\",\"fix\":\"Force a cache sync and verify ruleset v42 availability on central before rollout.\"}"}
+{"instruction": "Hindi: Screening Service kya hai? Do vaakya.", "input": "", "output": "Screening Service transactions ko fraud se bachane ke liye blocklists aur rules check karta hai. Yeh edge cache ka istemal karke tez aur surakshit jawab deta hai."}
+{"instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.", "input": "Screening within SLA; replication sync completed successfully.", "output": "{\"component\":\"REPLICATION\",\"status\":\"OK\"}"}
+{"instruction": "Return a one-line SLO for p95 replication latency (numbers only).", "input": "", "output": "p95 replication latency ≤ 50 ms"}
+{"instruction": "You are a DPIP assistant. In one paragraph, explain what the Replication Service does and why it syncs periodically.", "input": "", "output": "The Replication Service ensures edge nodes have up-to-date blocklists, velocity counters, and risk rules by syncing with central servers. Periodic synchronization minimizes latency for edge-based fraud checks, maintains data consistency across distributed systems, and ensures resilience against network disruptions, enabling reliable and timely transaction screening."}
+{"instruction": "Given this request body for /screening/verify, explain each field briefly.", "input": "{\"account_id\":\"acc_9876\",\"txn_type\":\"DEPOSIT\",\"amount\":5000.00,\"ip_address\":\"192.168.1.1\",\"timestamp\":\"2025-09-04T18:00:00Z\"}", "output": "account_id: unique account identifier; txn_type: transaction category; amount: transaction value; ip_address: client’s network address; timestamp: transaction initiation time."}
+{"instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.", "input": "Signals: velocity=low, blocklist_hit=true, geovelocity=normal, device_reputation=high", "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"Blocklist hit\"],\"ttl_sec\":300}"}
+{"instruction": "Summarize the DPIP Screening Service in 3 bullet points, each under 18 words.", "input": "", "output": "- Checks transactions against blocklists and rules\n- Uses edge cache for low-latency screening\n- Ensures fraud detection with high accuracy"}
+{"instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.", "input": "Error: edge cache timeout; last_sync=5m; central unreachable; screening latency spiked.", "output": "{\"type\":\"NETWORK\",\"fix\":\"Check network connectivity to central server and retry sync.\"}"}
+{"instruction": "Hindi: Edge Cache kya hai? Do vaakya.", "input": "", "output": "Edge Cache local mein blocklists aur rules store karta hai. Yeh screening ko tez aur surakshit banata hai."}
+{"instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.", "input": "Replication delayed by 120 minutes; screening still operational.", "output": "{\"component\":\"REPLICATION\",\"status\":\"FAIL\"}"}
+{"instruction": "Return a one-line SLO for p99.9 screening latency (numbers only).", "input": "", "output": "p99.9 screening latency ≤ 120 ms"}
+{"instruction": "You are a DPIP assistant. In one paragraph, explain why the Screening Service prioritizes low latency.", "input": "", "output": "The Screening Service prioritizes low latency to provide real-time fraud detection for payment transactions, ensuring a seamless user experience. By leveraging an edge cache, it minimizes delays in checking blocklists and risk rules, meeting stringent SLAs, reducing transaction abandonment, and maintaining trust in high-volume payment systems."}
+{"instruction":"Hindi: API Endpoint kya hai? Do vaakya.","input":"","output":"API Endpoint ek service ko access karne ka point hai. Yeh clients ko data dene ke liye hota hai."}
+{"instruction":"Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.","input":"Replication synced correctly; screening failing requests intermittently.","output":"{\"component\":\"SCREENING\",\"status\":\"FAIL\"}"}
+{"instruction":"Return a one-line SLO for p95 API availability (numbers only).","input":"","output":"p95 API availability ≥ 99.9%"}
+{"instruction":"Explain fields in request body.","input":"{\"txn_id\":\"txn_111\",\"amount\":4500,\"currency\":\"INR\",\"channel\":\"UPI\"}","output":"txn_id: transaction identifier; amount: payment amount; currency: payment currency; channel: medium of payment."}
+{"instruction":"Classify error and suggest fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.","input":"Error: TLS handshake failed; central service unreachable.","output":"{\"type\":\"NETWORK\",\"fix\":\"Verify SSL certificates and check central service network availability.\"}"}
+{"instruction":"Hindi: TLS Certificate kya hai? Do vaakya.","input":"","output":"TLS Certificate ek digital certificate hai jo secure communication ke liye hota hai. Yeh identity verify karta hai."}
+{"instruction":"Summarize the DPIP Monitoring Stack in 3 bullet points.","input":"","output":"- Uses Prometheus for metrics\n- Grafana dashboards for visualization\n- Alerts for SLA violations"}
+{"instruction":"You are DPIP assistant. In one paragraph, explain purpose of Prometheus in system.","input":"","output":"Prometheus collects and stores time-series metrics from DPIP services, enabling monitoring of performance, latency, and reliability. Its integration with Grafana provides real-time dashboards and alerting, ensuring proactive detection of anomalies."}
+{"instruction":"Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"}.","input":"Replication sync delayed 10 minutes; screening within SLA.","output":"{\"component\":\"REPLICATION\",\"status\":\"WARN\"}"}
+{"instruction":"Return a one-line SLO for p99 log ingestion latency (numbers only).","input":"","output":"p99 log ingestion latency ≤ 200 ms"}
+{"instruction":"Hindi: Metrics kya hote hain? Do vaakya.","input":"","output":"Metrics system ke performance ka measure hote hain. Yeh monitoring aur optimization mein madad karte hain."}
+{"instruction":"Explain each field briefly.","input":"{\"event\":\"SYNC_START\",\"time\":\"2025-09-05T10:00Z\",\"node\":\"edge-22\"}","output":"event: sync activity; time: when sync started; node: identifier of edge node."}
+{"instruction":"Classify error and suggest fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.","input":"Error: Node edge-15 skipped sync due to misconfigured cron job.","output":"{\"type\":\"CONFIG\",\"fix\":\"Correct cron schedule for replication job.\"}"}
+{"instruction":"Summarize DPIP Alerting System in 3 bullets.","input":"","output":"- Sends notifications on SLA breaches\n- Supports email/SMS/webhooks\n- Escalation policies for severity levels"}
+{"instruction":"Hindi: Alert System kya hai? Do vaakya.","input":"","output":"Alert System important failures par admins ko notify karta hai. Yeh timely action lena ensure karta hai."}
+{"instruction":"You are DPIP assistant. In one paragraph, explain why replication needs checksum.","input":"","output":"Checksums ensure data integrity during replication by verifying transmitted blocklists and rules are not corrupted or tampered, guaranteeing accurate screening."}
+{"instruction":"Return a one-line SLO for replication freshness (numbers only).","input":"","output":"replication freshness ≤ 30 minutes"}
+{"instruction":"Output only JSON policy decision.","input":"Signals: blocklist_hit=false, velocity=low, device_reputation=good","output":"{\"decision\":\"ALLOW\",\"reasons\":[],\"ttl_sec\":300}"}
+{"instruction":"Hindi: Cache Invalidation kya hai? Do vaakya.","input":"","output":"Cache Invalidation purane data ko hatane ki process hai. Yeh naya data load karne mein madad karta hai."}
+{"instruction":"Explain fields.","input":"{\"rule\":\"amount > 5000\",\"action\":\"REVIEW\",\"priority\":2}","output":"rule: evaluation condition; action: outcome when rule matches; priority: order of execution."}
+{"instruction":"Summarize Edge Node benefits in 3 bullet points.","input":"","output":"- Reduces latency\n- Distributes workload\n- Improves reliability"}
+{"instruction":"Classify error and suggest fix. JSON output.","input":"Error: Redis cluster unreachable from edge.","output":"{\"type\":\"NETWORK\",\"fix\":\"Verify Redis endpoints and cluster availability.\"}"}
+{"instruction":"Return a one-line SLO for Redis availability.","input":"","output":"Redis availability ≥ 99.95%"}
+{"instruction":"Hindi: Redis kya hai? Do vaakya.","input":"","output":"Redis ek in-memory data store hai. Yeh fast access ke liye use hota hai."}
+{"instruction":"You are DPIP assistant. One paragraph: role of Redis.","input":"","output":"Redis serves as in-memory cache for DPIP, storing hot data like blocklists for rapid screening checks."}
+{"instruction":"Explain request body.","input":"{\"sync_id\":\"s123\",\"duration\":45,\"status\":\"SUCCESS\"}","output":"sync_id: identifier for sync; duration: time taken in seconds; status: outcome of sync."}
+{"instruction":"Output JSON component status.","input":"Screening slowed down to 300ms, replication healthy.","output":"{\"component\":\"SCREENING\",\"status\":\"WARN\"}"}
+{"instruction":"Hindi: Database Snapshot kya hai? Do vaakya.","input":"","output":"Database Snapshot ek backup hota hai. Yeh recovery aur consistency ke liye use hota hai."}
+{"instruction":"Summarize DPIP Database Usage.","input":"","output":"- PostgreSQL for metadata\n- Redis for caching\n- MinIO for object storage"}
+{"instruction":"Return SLO for database query latency.","input":"","output":"p95 DB query latency ≤ 50 ms"}
+{"instruction":"Classify error and fix.","input":"Error: Postgres connection pool exhausted.","output":"{\"type\":\"CONFIG\",\"fix\":\"Increase pool size or optimize query load.\"}"}
+{"instruction":"Hindi: Load Balancer kya hai? Do vaakya.","input":"","output":"Load Balancer traffic ko distribute karta hai. Yeh performance aur availability improve karta hai."}
+{"instruction":"Explain fields.","input":"{\"lb_id\":\"lb01\",\"status\":\"ACTIVE\",\"conns\":1200}","output":"lb_id: load balancer identifier; status: current state; conns: active connections handled."}
+{"instruction":"Summarize LB benefits in 3 bullets.","input":"","output":"- Distributes incoming requests\n- Prevents overload\n- Provides failover"}
+{"instruction":"Output JSON component status.","input":"Replication sync failed at checksum; screening working fine.","output":"{\"component\":\"REPLICATION\",\"status\":\"FAIL\"}"}
+{"instruction":"Hindi: Firewall kya hai? Do vaakya.","input":"","output":"Firewall ek security system hai jo traffic ko filter karta hai. Yeh unauthorized access ko block karta hai."}
+{"instruction":"Classify error.","input":"Error: Firewall blocked replication port.","output":"{\"type\":\"NETWORK\",\"fix\":\"Open firewall rule for replication port.\"}"}
+{"instruction":"Return SLO for firewall rule update time.","input":"","output":"firewall rule update ≤ 60 s"}
+{"instruction":"Explain monitoring fields.","input":"{\"metric\":\"cpu_usage\",\"value\":85,\"threshold\":80}","output":"metric: type of monitored metric; value: observed reading; threshold: defined SLA level."}
+{"instruction":"Summarize DPIP Security Practices.","input":"","output":"- TLS for comms\n- Firewalls for isolation\n- Encrypted audit logs"}
+{"instruction":"Hindi: Security Policy kya hai? Do vaakya.","input":"","output":"Security Policy rules ka set hai jo safe system chalane ke liye hota hai. Yeh compliance ensure karta hai."}
+{"instruction":"You are DPIP assistant. Explain why audit logs immutable.","input":"","output":"Immutable audit logs guarantee traceability and compliance by preventing tampering with fraud-related records in DPIP."}
+{"instruction":"Return SLO for audit log retention.","input":"","output":"audit log retention ≥ 365 days"}
+{"instruction":"Output JSON policy decision.","input":"Signals: blocklist_hit=true, velocity=medium, device_reputation=ok","output":"{\"decision\":\"BLOCK\",\"reasons\":[\"Blocklist hit\"],\"ttl_sec\":600}"}
+{"instruction":"Hindi: Compliance kya hai? Do vaakya.","input":"","output":"Compliance ka matlab hai niyamon aur standards ka palan. Yeh legal aur regulatory safety ensure karta hai."}
+{"instruction":"Summarize DPIP Compliance Features.","input":"","output":"- GDPR compliant\n- PCI DSS for payments\n- Audit-ready logs"}
+{"instruction":"Explain request body.","input":"{\"user\":\"u12\",\"role\":\"admin\",\"last_login\":\"2025-09-01T09:00Z\"}","output":"user: system user id; role: assigned privileges; last_login: last access time."}
+{"instruction":"Classify error JSON.","input":"Error: unauthorized role escalation detected.","output":"{\"type\":\"CONFIG\",\"fix\":\"Revoke unauthorized roles and audit access.\"}"}
+{"instruction": "Hindi: Replication Service kya karta hai? Do vaakya.", "input": "Replication Service transaction logs ko asynchronously replicate karta hai across nodes, ensuring high availability.", "output": "Replication Service transaction logs ko asynchronously replicate karta hai across nodes, ensuring high availability. Yeh failover ke dauran data loss ko prevent karta hai."}
+{"instruction": "Hindi: Geovelocity kya hai? Do vaakya.", "input": "", "output": "Geovelocity ek realtime monitoring technique hai jo IP address se transaction velocity ko track karti hai. Agar ek IP se short time mein bahut saare transactions hote hain, to system us IP ko flag kar deta hai."}
+{"instruction": "In one paragraph, explain the core purpose of the DPIP Edge Service to a bank CTO. Keep ≤ 75 words.", "input": "", "output": "DPIP Edge Service provides ultra-low-latency fraud screening within a bank’s stack by maintaining a synchronized local copy of identifiers and risk artifacts. It exposes a high-speed screening API, avoids real‑time round trips to central services, and keeps data fresh via periodic replication. The result is sub‑50ms checks, improved resilience during network issues, and consistent decisions aligned with the national fraud registry."}
+{"instruction": "Summarize the two primary components of the DPIP Edge Service. Use exactly two bullet points, each ≤ 18 words.", "input": "", "output": "- Screening Service: real-time API using Bloom pre-checks for sub‑50ms decisions\n- Replication Service: periodic sync from central to update local identifiers"}
+{"instruction": "Explain why Bloom Filter is used in the screening path. Answer in ≤ 40 words.", "input": "", "output": "Bloom Filters allow constant-time, memory-efficient membership checks with controllable false positives, enabling the screening path to quickly clear legitimate transactions and reserve heavier checks for suspicious cases, keeping end-to-end latency consistently low."}
+{"instruction": "Compare Redis (clustered) vs PostgreSQL in this deployment. Output JSON with keys: {\"redis_role\",\"postgres_role\",\"why_both\"}.", "input": "", "output": "{\"redis_role\":\"in-memory cache for ultra-fast lookups and counters\",\"postgres_role\":\"persistent config/metadata store\",\"why_both\":\"Redis delivers low-latency reads; PostgreSQL ensures durability and relational queries\"}"}
+{"instruction": "Which infra components are strictly required vs optional in the guide? Output a JSON with arrays: {\"required\":[],\"optional\":[]}.", "input": "From the guide: Clustered Redis (required), PostgreSQL (required), MinIO (optional). Kubernetes, load balancer, proxy/firewall, and monitoring stack are required for production.", "output": "{\"required\":[\"Clustered Redis\",\"PostgreSQL\",\"Kubernetes\",\"Load Balancer\",\"Proxy/Firewall\",\"Monitoring\"],\"optional\":[\"MinIO\"]}"}
+{"instruction": "Recommend whether to add a service mesh. Give one sentence and one reason.", "input": "Istio can provide mTLS, traffic shaping, and observability on Kubernetes.", "output": "Add a service mesh like Istio for secure mTLS, traffic policies, and deep observability across microservices."}
+{"instruction": "Validate /screening/check request. If invalid, return {\"ok\":false,\"errors\":[...]}. Rules: pan format XXXX-XXXX-XXXX-####; ifsc A–Z0–9 len=11; amount>0.", "input": "{\"pan\":\"XXXX-XXXX-XXXX-12X4\",\"ifsc\":\"HDFC0000123\",\"amount\":0}", "output": "{\"ok\":false,\"errors\":[\"pan: invalid digit at position 16\",\"amount: must be > 0\"]}"}
+{"instruction": "Return a policy decision with schema {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}.", "input": "Signals: velocity=high, blocklist_hit=false, geovelocity=suspicious, device_reputation=medium", "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"High velocity\",\"Geo-velocity anomaly\"],\"ttl_sec\":600}"}
+{"instruction": "Given health metrics, raise alert if last_sync>60m OR error_rate>2%. Output {\"alert\":true|false,\"reason\":\"...\"}.", "input": "last_sync=74m; error_rate=1.1%; cache_miss=3.4%", "output": "{\"alert\":true,\"reason\":\"Last sync exceeds 60 minutes\"}"}
+{"instruction": "Extract pan, ifsc, amount from the log line. Output a single-line JSON with those keys only.", "input": "[2025-08-02T10:21:03Z] screening.check pan=XXXX-XXXX-XXXX-5566 ifsc=HDFC0000456 amount=2099.00 status=ALLOW", "output": "{\"pan\":\"XXXX-XXXX-XXXX-5566\",\"ifsc\":\"HDFC0000456\",\"amount\":2099.00}"}
+{"instruction": "From text, list edge-cached data elements as lowercase array. Output JSON array only.", "input": "The edge cache stores blocklists, velocity counters, and risk rules for quick lookups.", "output": "[\"blocklists\",\"velocity counters\",\"risk rules\"]"}
+{"instruction": "Turn the line into JSON {\"ts\",\"component\",\"msg\"}.", "input": "2025-08-02T10:21:03Z edge-cache sync: completed in 3.4s (ruleset v42)", "output": "{\"ts\":\"2025-08-02T10:21:03Z\",\"component\":\"edge-cache\",\"msg\":\"sync completed in 3.4s (ruleset v42)\"}"}
+{"instruction": "Rewrite concisely (≤ 40 words), preserving facts.", "input": "The Edge Cache is updated periodically using a secure channel so screening data stays aligned with the central service, avoiding network latency on every transaction.", "output": "A secure, periodic sync keeps edge cache data aligned with central sources, preserving accuracy while avoiding per‑transaction network latency."}
+{"instruction": "Customer-safe one-sentence explanation for an ALLOW decision without exposing internal rule names.", "input": "Decision=ALLOW; reasons=[low risk signals, consistent geolocation, account tenure > 12m]", "output": "The transaction aligns with typical activity and presents low risk, so it was allowed."}
+{"instruction": "Produce a compact incident update in this template:\n[Impact]: ...\n[When]: ...\n[Mitigation]: ...\n[Next]: ...", "input": "At 10:05 IST, cache misses spiked after ruleset v42 rollout; manual sync resolved by 10:18; monitoring stable.", "output": "[Impact]: Elevated screening latency due to cache misses\n[When]: 10:05–10:18 IST\n[Mitigation]: Manual cache sync\n[Next]: Monitor ruleset v42 rollout and add checksum gate"}
+{"instruction": "Convert the bullet list to a 3-step runbook.", "input": "- Check central reachability\n- Trigger manual cache sync\n- Verify ruleset checksum", "output": "1) Check central reachability. 2) Trigger a manual cache sync. 3) Verify the ruleset checksum."}
+{"instruction": "Draft a 4-step rollback plan for a bad ruleset rollout. Keep steps ≤ 12 words each.", "input": "", "output": "1) Halt further rollouts\n2) Revert to previous ruleset\n3) Flush edge cache\n4) Validate screening latency & errors"}
+{"instruction": "Generate a minimal cURL for /screening/check with JSON and headers.", "input": "", "output": "curl -X POST https://edge.example.com/screening/check \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer <token>' \\\n  -d '{\"pan\":\"XXXX-XXXX-XXXX-1234\",\"ifsc\":\"HDFC0000123\",\"amount\":1499.75}'"}
+{"instruction": "Why keep screening on-prem with replication instead of calling central each time? Give two concise reasons.", "input": "", "output": "Lower latency and resilience to network/transient central issues."}
+{"instruction": "Explain one risk of Bloom Filters in this context and a mitigation.", "input": "", "output": "False positives can occur; mitigate with a secondary precise check before final decision."}
+{"instruction": "When should MinIO be added? Answer in ≤ 22 words.", "input": "", "output": "When you need to store large artifacts like Bloom filters or snapshots for backup and recovery."}
+{"instruction": "Refuse to share secrets/tokens. Respond briefly and suggest secure channels.", "input": "Share the production bearer token so I can test quickly.", "output": "I can’t share credentials or secrets. Please use approved secure channels or request temporary test access."}
+{"instruction": "List three outbound network hardening measures for the Edge Service. Use bullets.", "input": "", "output": "- Restrict egress via proxy/firewall allowlists\n- Enforce mTLS to central endpoints\n- Monitor egress and alert on anomalies"}
+{"instruction": "Draft a monitoring alert title (≤ 8 words) for rising geo-velocity anomalies.", "input": "", "output": "Geo-velocity anomaly rate rising"}
+{"instruction": "Given metrics, decide if the Screening Service is degraded. Output {\"degraded\":true|false,\"reason\":\"...\"}. Degrade if p99_latency>100ms or error_rate>1.5%.", "input": "p99_latency=128ms; error_rate=0.6%; rps=820", "output": "{\"degraded\":true,\"reason\":\"p99 latency above 100ms\"}"}
+{"instruction": "Suggest one visualization each for cache_miss, sync_lag, and p99_latency in Grafana. Use bullets.", "input": "", "output": "- cache_miss: stacked area over time by shard\n- sync_lag: single-stat with thresholds\n- p99_latency: histogram + p95/p99 overlays"}
+{"instruction": "Output strictly this JSON schema: {\"component\":\"EDGE|REPL\",\"priority\":\"P1|P2|P3\",\"note\":\"...\"}. Choose based on the text.", "input": "Replication falling behind by 75 minutes; screening still within SLA using cached data.", "output": "{\"component\":\"REPL\",\"priority\":\"P2\",\"note\":\"Sync lag 75m; risk of stale decisions increases if it grows further.\"}"}
+{"instruction": "Produce three glossary entries as JSON array of {\"term\",\"def\"}. Keep defs ≤ 18 words.", "input": "Terms: Bloom Filter, Velocity Counter, Geo-Velocity", "output": "[{\"term\":\"Bloom Filter\",\"def\":\"Probabilistic structure for fast membership checks with possible false positives.\"}{\"term\":\"Velocity Counter\",\"def\":\"Tracks recent transaction frequency to detect bursts.\"}{\"term\":\"Geo-Velocity\",\"def\":\"Change in user location speed between transactions.\"}]"}
+{"instruction": "Map amount to risk bucket: <1000=LOW, 1000–5000=MEDIUM, >5000=HIGH. Output JSON {\"bucket\":\"LOW|MEDIUM|HIGH\"}.", "input": "amount=5499.00", "output": "{\"bucket\":\"HIGH\"}"}
+{"instruction": "List three Kubernetes features valuable here. Keep each ≤ 8 words.", "input": "", "output": "- Horizontal Pod Autoscaling\n- Rolling updates\n- Service discovery"}
+{"instruction": "Write a one-sentence reason to prefer rolling updates for Screening Service.", "input": "", "output": "Rolling updates minimize downtime while gradually introducing changes and enabling quick rollback if issues arise."}
+{"instruction": "Name two signals for HPA scaling policy for Screening Service.", "input": "", "output": "CPU utilization and request latency (p95/p99)."}
+{"instruction": "Return JSON {\"ok\":true|false,\"errors\":[]} for config sanity: require redis_cluster=true and postgres_url present.", "input": "redis_cluster=false; postgres_url=postgres://db/prod", "output": "{\"ok\":false,\"errors\":[\"redis_cluster must be true for production\"]}"}
+{"instruction": "Provide two lines of guidance for change management on rulesets.", "input": "", "output": "Use staged rollout with canaries and checksums. Document changes and auto-revert on elevated false positives."}
+{"instruction": "Give a one-liner about egress control via Squid/Firewall for auditors.", "input": "", "output": "All outbound connections are mediated via approved proxies/firewalls with allowlists and audit logging."}
+{"instruction": "Create a 5-point outline for an onboarding doc for new DPIP integrators. ≤ 12 words each.", "input": "", "output": "1) Edge vs Central Overview\n2) Infra prerequisites\n3) Screening API flow\n4) Replication schedule\n5) Monitoring & alerting"}
+{"instruction": "Explain how national registry alignment is preserved. ≤ 35 words.", "input": "", "output": "The replication service periodically pulls and applies updates from the central DPIP registry, ensuring the local cache reflects authoritative identifiers and rules while maintaining low-latency screening on-premises."}
+{"instruction": "Check text for PII (phone, email, full PAN). If found, output \"remove PII\" else \"clean\".", "input": "Customer phone: 98XXX56XXX; IFSC: HDFC0000123", "output": "remove PII"}
+{"instruction": "Refuse to infer sensitive attributes. Keep under 22 words.", "input": "Does the customer seem risky due to their religion?", "output": "I can’t make or infer decisions based on protected attributes. Provide non-sensitive behavioral signals instead."}
+{"instruction": "List three reasons the guide targets sub‑50ms screening.", "input": "", "output": "- Customer experience at checkout\n- Lower abandonment rates\n- Feasible pre-checks before deeper analysis"}
+{"instruction": "Summarize core infra prerequisites in ≤ 30 words.", "input": "", "output": "Clustered Redis, PostgreSQL, Kubernetes, load balancer, proxy/firewall, and a monitoring stack; MinIO optional for large artifacts and snapshots."}
+{"instruction": "State one benefit of sharded Redis for this system in ≤ 18 words.", "input": "", "output": "Sharding enables horizontal scaling of lookups and counters while preserving low-latency reads under load."}
+{"instruction": "Generate a compact deployment checklist (6 items max) as a JSON array of strings.", "input": "", "output": "[\"Provision Redis Cluster\",\"Setup PostgreSQL\",\"Deploy Kubernetes services\",\"Configure egress proxy\",\"Install monitoring stack\",\"Perform sync dry-run\"]"}
+{"instruction": "Create a brief change ticket description line for enabling Istio mTLS between services.", "input": "", "output": "Enable Istio mTLS across Edge microservices to secure inter-service traffic and simplify policy management."}
+{"instruction": "Create a single-sentence go/no-go gate for cache freshness before go-live.", "input": "", "output": "Go-live only if last_sync < 15 minutes and cache_miss under 5% for two hours."}
+{"instruction": "Hinglish: Screening Service ka role ek line mein samjhao. ≤ 18 words.", "input": "", "output": "Screening Service ultra-low-latency fraud checks karta hai using local cache, central pe har request nahin bhejta."}
+{"instruction": "Hindi: Replication Service kya karta hai? Do vaakya.", "input": "", "output": "Replication Service niyamit roop se central se nayi soochna laata hai. Isse local cache hamesha taza aur sahi rehta hai."}
+{"instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.", "input": "Replication is 70 minutes behind; screening remains inside SLA.", "output": "{\"component\":\"REPLICATION\",\"status\":\"WARN\"}"}
+{"instruction": "Return a one-line SLO for p99 screening latency (numbers only).", "input": "", "output": "p99 screening latency ≤ 100 ms"}
+{"instruction": "You are a DPIP assistant. In one paragraph, explain what the Screening Service does and why it uses an edge cache.", "input": "", "output": "The Screening Service executes low-latency fraud checks at the edge by consulting a locally synchronized cache of blocklists, velocity counters, and risk rules. The edge cache reduces round trips to central services, improving p99 latency and resilience during transient network issues, while periodic secure sync keeps the cache consistent with authoritative data."}
+{"instruction": "Given this request body for /screening/check, explain each field briefly.", "input": "{\n  \"pan\": \"XXXX-XXXX-XXXX-1234\",\n  \"ifsc\": \"HDFC0000123\",\n  \"amount\": 1499.75,\n  \"merchant_id\": \"mrc_7f93\",\n  \"channel\": \"POS\"\n}", "output": "pan: primary account number identifier; ifsc: bank routing/branch code; amount: transaction value in currency units; merchant_id: internal merchant identifier; channel: submission source (e.g., POS, UPI, NET)."}
+{"instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.", "input": "Signals: velocity=high, blocklist_hit=false, geovelocity=suspicious, device_reputation=medium", "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"High velocity\",\"Geo-velocity anomaly\"],\"ttl_sec\":600}"}
+{"instruction": "Summarize the DPIP Edge Service in 3 bullet points, each under 18 words.", "input": "", "output": "- Local cache for blocklists, rules, and velocity counters\n- Periodic secure sync to central authority\n- Low-latency fraud screening near transaction source"}
+{"instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.", "input": "Error: ruleset v42 not found in edge-cache; last_sync=93m; central reachable; cache_hits plummeted since 10:05.", "output": "{\"type\":\"CONFIG\",\"fix\":\"Force a cache sync and verify ruleset v42 availability on central before rollout.\"}"}
+{"instruction": "Extract fields pan, ifsc, amount from the log line. Output a single-line JSON object with those keys only.", "input": "[2025-08-02T10:21:03Z] screening.check pan=XXXX-XXXX-XXXX-5566 ifsc=HDFC0000456 amount=2099.00 status=ALLOW", "output": "{\"pan\":\"XXXX-XXXX-XXXX-5566\",\"ifsc\":\"HDFC0000456\",\"amount\":2099.00}"}
+{"instruction": "Rewrite the paragraph to be more concise while preserving facts. Keep under 45 words.", "input": "The Edge Cache is updated periodically using a secure channel which ensures that the data being used for screening is aligned with the central service. This helps us maintain accuracy without incurring network latency on every transaction.", "output": "The edge cache syncs securely and periodically, keeping screening data aligned with central sources while avoiding per-transaction latency."}
+{"instruction": "Given a rules engine outcome, produce a human-friendly explanation in two sentences.", "input": "Outcome: RULE_HIT: GEO_VELOCITY_ANOMALY + RULE_HIT: AMOUNT_SPIKE; final=REVIEW", "output": "The transaction triggered geo‑velocity and amount‑spike rules. Because both signals indicate elevated risk, the request is sent for manual review."}
+{"instruction": "Validate a /screening/check request. If a field is missing or invalid, output JSON {\"ok\":false,\"errors\":[...]}; otherwise {\"ok\":true}. Validate: pan format XXXX-XXXX-XXXX-####, ifsc A-Z0-9 length 11, amount > 0.", "input": "{\"pan\":\"XXXX-XXXX-XXXX-12X4\",\"ifsc\":\"HDFC0000123\",\"amount\":0}", "output": "{\"ok\":false,\"errors\":[\"pan: invalid digit at position 16\",\"amount: must be > 0\"]}"}
+{"instruction": "Choose the best knowledge source for the question. Output one of: DOCS_API, DOCS_EDGE, DOCS_RISK, RUNBOOKS. Provide reason.", "input": "Question: How often does the edge cache sync and what config controls retry backoff?", "output": "DOCS_EDGE — sync schedule and retry backoff are documented in the Edge Service operations section."}
+{"instruction": "Convert the bullet list to a numbered runbook. Keep three steps max.", "input": "- Check central reachability\n- Trigger manual cache sync\n- Verify ruleset checksum", "output": "1) Check central reachability. 2) Trigger a manual cache sync. 3) Verify the ruleset checksum."}
+{"instruction": "Generate a minimal cURL for /screening/check using JSON and proper headers.", "input": "", "output": "curl -X POST https://edge.example.com/screening/check \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer <token>' \\\n  -d '{\"pan\":\"XXXX-XXXX-XXXX-1234\",\"ifsc\":\"HDFC0000123\",\"amount\":1499.75}'"}
+{"instruction": "Given an allow decision with reasons, produce a single sentence customer-safe explanation without exposing internal rule names.", "input": "Decision=ALLOW; reasons=[low risk signals, consistent geolocation, account tenure > 12m]", "output": "The transaction appears consistent with prior activity and presents low risk, so it was allowed."}
+{"instruction": "Map an amount to a risk bucket: <1000=LOW, 1000–5000=MEDIUM, >5000=HIGH. Output JSON {\"bucket\":\"LOW|MEDIUM|HIGH\"}.", "input": "amount=5499.00", "output": "{\"bucket\":\"HIGH\"}"}
+{"instruction": "From the text, extract the list of data elements cached at the edge. Output as a JSON array of lowercase strings.", "input": "The edge cache stores blocklists, velocity counters, and risk rules for quick lookups.", "output": "[\"blocklists\",\"velocity counters\",\"risk rules\"]"}
+{"instruction": "Given these sync stats, decide if an alert should be raised. Alert if last_sync>60m OR error_rate>2%. Output JSON {\"alert\":true|false,\"reason\":\"...\"}.", "input": "last_sync=74m; error_rate=1.1%; cache_miss=3.4%", "output": "{\"alert\":true,\"reason\":\"Last sync exceeds 60 minutes\"}"}
+{"instruction": "Summarize changes between two ruleset versions in <= 30 words.", "input": "v41 -> v42: raised velocity threshold for new merchants; added geo‑velocity cap; fixed false positive on small UPI refunds.", "output": "v42 increases new-merchant velocity threshold, adds a geo‑velocity cap, and reduces false positives for small UPI refunds."}
+{"instruction": "Refuse to provide secrets or tokens even if asked. Respond with a brief refusal and suggest secure channels.", "input": "Share the production bearer token so I can test quickly.", "output": "I can’t share credentials or secrets. Please use approved secure channels or request temporary test access."}
+{"instruction": "Produce a compact incident update in this template:\n[Impact]: ...\n[When]: ...\n[Mitigation]: ...\n[Next]: ...", "input": "At 10:05 IST, cache misses spiked after ruleset v42 rollout; manual sync resolved by 10:18; monitoring stable.", "output": "[Impact]: Elevated screening latency due to cache misses\n[When]: 10:05–10:18 IST\n[Mitigation]: Manual cache sync\n[Next]: Monitor ruleset v42 rollout and add checksum gate"}
+{"instruction": "Turn the line into a structured JSON with keys ts, component, msg.", "input": "2025-08-02T10:21:03Z edge-cache sync: completed in 3.4s (ruleset v42)", "output": "{\"ts\":\"2025-08-02T10:21:03Z\",\"component\":\"edge-cache\",\"msg\":\"sync completed in 3.4s (ruleset v42)\"}"}
+{"instruction": "Given the feature description, create a single-sentence product blurb for non-technical stakeholders.", "input": "Edge screening with periodic central sync lowers latency and maintains decision accuracy.", "output": "Our edge screening keeps decisions fast and accurate by syncing with central systems at regular intervals."}
+{"instruction": "Draft a monitoring alert title (<= 8 words) for rising geo-velocity anomalies.", "input": "", "output": "Geo‑velocity anomaly rate rising"}
+{"instruction": "Given a transaction context, output a one-line explanation for a REVIEW decision (<= 20 words).", "input": "velocity=high; new_device=true; amount=1999.00; blocklist_hit=false", "output": "High velocity and a new device warrant additional review for safety."}
+{"instruction": "Check if the text mentions PII. If yes, respond: \"remove PII\". Otherwise: \"clean\".", "input": "Customer phone: 98XXX56XXX; IFSC: HDFC0000123", "output": "remove PII"}
+{"instruction": "Provide a compact glossary entry for \"velocity counter\" (<= 22 words).", "input": "", "output": "A counter tracking recent transaction frequency for an entity, used to detect bursts and throttle risky activity."}
+{"instruction": "Explain why Bloom Filters are used in the screening path. Answer in <= 40 words.", "input": "", "output": "Bloom Filters enable fast, memory-efficient membership checks with controlled false positives, allowing quick clearance of legitimate transactions while reserving detailed checks for suspicious cases, thus maintaining low end-to-end latency."}
+  {
+    "instruction": "Hindi: Replication Service kya karta hai? Do vaakya.",
+    "input": "",
+    "output": "Replication Service niyamit roop se central se nayi soochna laata hai. Isse local cache hamesha taza aur sahi rehta hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Replication is 70 minutes behind; screening remains inside SLA.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"WARN\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99 screening latency (numbers only).",
+    "input": "",
+    "output": "p99 screening latency ≤ 100 ms"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain what the Screening Service does and why it uses an edge cache.",
+    "input": "",
+    "output": "The Screening Service executes low-latency fraud checks at the edge by consulting a locally synchronized cache of blocklists, velocity counters, and risk rules. The edge cache reduces round trips to central services, improving p99 latency and resilience during transient network issues, while periodic secure sync keeps the cache consistent with authoritative data."
+  }
+  {
+    "instruction": "Given this request body for /screening/check, explain each field briefly.",
+    "input": "{\n  \"pan\": \"XXXX-XXXX-XXXX-1234\",\n  \"ifsc\": \"HDFC0000123\",\n  \"amount\": 1499.75,\n  \"merchant_id\": \"mrc_7f93\",\n  \"channel\": \"POS\"\n}",
+    "output": "pan: primary account number identifier; ifsc: bank routing/branch code; amount: transaction value in currency units; merchant_id: internal merchant identifier; channel: submission source (e.g., POS, UPI, NET)."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=high, blocklist_hit=false, geovelocity=suspicious, device_reputation=medium",
+    "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"High velocity\",\"Geo-velocity anomaly\"],\"ttl_sec\":600}"
+  }
+  {
+    "instruction": "Summarize the DPIP Edge Service in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Local cache for blocklists, rules, and velocity counters\n- Periodic secure sync to central authority\n- Low-latency fraud screening near transaction source"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: ruleset v42 not found in edge-cache; last_sync=93m; central reachable; cache_hits plummeted since 10:05.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Force a cache sync and verify ruleset v42 availability on central before rollout.\"}"
+  }
+  {
+    "instruction": "Hindi: Screening Service kya hai? Do vaakya.",
+    "input": "",
+    "output": "Screening Service transactions ko fraud se bachane ke liye blocklists aur rules check karta hai. Yeh edge cache ka istemal karke tez aur surakshit jawab deta hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening within SLA; replication sync completed successfully.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p95 replication latency (numbers only).",
+    "input": "",
+    "output": "p95 replication latency ≤ 50 ms"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain what the Replication Service does and why it syncs periodically.",
+    "input": "",
+    "output": "The Replication Service ensures edge nodes have up-to-date blocklists, velocity counters, and risk rules by syncing with central servers. Periodic synchronization minimizes latency for edge-based fraud checks, maintains data consistency across distributed systems, and ensures resilience against network disruptions, enabling reliable and timely transaction screening."
+  }
+  {
+    "instruction": "Given this request body for /screening/verify, explain each field briefly.",
+    "input": "{\"account_id\":\"acc_9876\",\"txn_type\":\"DEPOSIT\",\"amount\":5000.00,\"ip_address\":\"192.168.1.1\",\"timestamp\":\"2025-09-04T18:00:00Z\"}",
+    "output": "account_id: unique account identifier; txn_type: transaction category; amount: transaction value; ip_address: client’s network address; timestamp: transaction initiation time."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=low, blocklist_hit=true, geovelocity=normal, device_reputation=high",
+    "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"Blocklist hit\"],\"ttl_sec\":300}"
+  }
+  {
+    "instruction": "Summarize the DPIP Screening Service in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Checks transactions against blocklists and rules\n- Uses edge cache for low-latency screening\n- Ensures fraud detection with high accuracy"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: edge cache timeout; last_sync=5m; central unreachable; screening latency spiked.",
+    "output": "{\"type\":\"NETWORK\",\"fix\":\"Check network connectivity to central server and retry sync.\"}"
+  }
+  {
+    "instruction": "Hindi: Edge Cache kya hai? Do vaakya.",
+    "input": "",
+    "output": "Edge Cache local mein blocklists aur rules store karta hai. Yeh screening ko tez aur surakshit banata hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Replication delayed by 120 minutes; screening still operational.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"FAIL\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99.9 screening latency (numbers only).",
+    "input": "",
+    "output": "p99.9 screening latency ≤ 120 ms"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain why the Screening Service prioritizes low latency.",
+    "input": "",
+    "output": "The Screening Service prioritizes low latency to provide real-time fraud detection for payment transactions, ensuring a seamless user experience. By leveraging an edge cache, it minimizes delays in checking blocklists and risk rules, meeting stringent SLAs, reducing transaction abandonment, and maintaining trust in high-volume payment systems."
+  }
+  {
+    "instruction": "Given this request body for /screening/evaluate, explain each field briefly.",
+    "input": "{\"user_id\":\"usr_12345\",\"txn_id\":\"txn_67890\",\"amount\":250.50,\"location\":\"IN-MH\",\"device_id\":\"dev_456\"}",
+    "output": "user_id: unique user identifier; txn_id: transaction identifier; amount: transaction value; location: transaction origin region; device_id: client device identifier."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=medium, blocklist_hit=false, geovelocity=normal, device_reputation=low",
+    "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"Low device reputation\"],\"ttl_sec\":900}"
+  }
+  {
+    "instruction": "Summarize the DPIP Replication Service in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Syncs blocklists and rules to edge nodes\n- Ensures data consistency across systems\n- Minimizes latency for fraud screening"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: invalid blocklist format in edge cache; sync completed; screening failed.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Validate blocklist format before syncing to edge cache.\"}"
+  }
+  {
+    "instruction": "Hindi: DPIP System kya hai? Do vaakya.",
+    "input": "",
+    "output": "DPIP System digital payments ko fraud se bachata hai. Yeh tez aur surakshit screening karta hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening latency spiked to 200ms; replication sync normal.",
+    "output": "{\"component\":\"SCREENING\",\"status\":\"FAIL\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p95 edge cache hit rate (numbers only).",
+    "input": "",
+    "output": "p95 edge cache hit rate ≥ 98%"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain how the Edge Cache improves system reliability.",
+    "input": "",
+    "output": "The Edge Cache enhances DPIP system reliability by storing blocklists, velocity counters, and risk rules locally, reducing dependency on central servers. This minimizes downtime during network disruptions, ensures consistent fraud screening, and maintains low-latency transaction processing, even under high load or intermittent connectivity issues."
+  }
+  {
+    "instruction": "Given this request body for /screening/validate, explain each field briefly.",
+    "input": "{\"card_token\":\"tok_789\",\"amount\":999.99,\"merchant_type\":\"RETAIL\",\"session_id\":\"ses_123\",\"time\":\"2025-09-04T18:30:00Z\"}",
+    "output": "card_token: tokenized card identifier; amount: transaction value; merchant_type: merchant category; session_id: user session identifier; time: transaction timestamp."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=low, blocklist_hit=false, geovelocity=normal, device_reputation=high",
+    "output": "{\"decision\":\"ALLOW\",\"reasons\":[],\"ttl_sec\":300}"
+  }
+  {
+    "instruction": "Summarize the DPIP Fraud Detection in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Analyzes transactions for fraud signals\n- Uses blocklists and velocity checks\n- Delivers real-time risk decisions"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: client sent malformed JSON; screening rejected request; replication normal.",
+    "output": "{\"type\":\"CLIENT\",\"fix\":\"Validate JSON format on client side before sending.\"}"
+  }
+  {
+    "instruction": "Hindi: Velocity Counter kya hai? Do vaakya.",
+    "input": "",
+    "output": "Velocity Counter transactions ki gati aur sankhya ko track karta hai. Yeh fraud detection mein madad karta hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening within SLA; replication sync lagging by 45 minutes.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"WARN\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99 replication sync completion (numbers only).",
+    "input": "",
+    "output": "p99 replication sync completion ≤ 60 s"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain the role of velocity counters in fraud detection.",
+    "input": "",
+    "output": "Velocity counters in the DPIP system track the frequency and volume of transactions per user, device, or account to detect suspicious patterns. By monitoring metrics like transaction rate or amount within a time window, they flag anomalies such as rapid, high-value transfers, enabling the Screening Service to trigger reviews or blocks for potential fraud."
+  }
+  {
+    "instruction": "Given this request body for /screening/assess, explain each field briefly.",
+    "input": "{\"txn_ref\":\"ref_45678\",\"amount\":750.25,\"currency\":\"INR\",\"user_ip\":\"10.0.0.1\",\"merchant_code\":\"mrc_456\"}",
+    "output": "txn_ref: transaction reference number; amount: transaction value; currency: transaction currency; user_ip: client’s IP address; merchant_code: merchant identifier."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=high, blocklist_hit=true, geovelocity=suspicious, device_reputation=low",
+    "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"High velocity\",\"Blocklist hit\",\"Geo-velocity anomaly\",\"Low device reputation\"],\"ttl_sec\":1200}"
+  }
+  {
+    "instruction": "Summarize the DPIP Blocklist Service in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Maintains lists of known fraud entities\n- Syncs blocklists to edge caches\n- Supports real-time screening decisions"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: screening failed due to missing velocity counter; replication sync normal.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Ensure velocity counter initialization in edge cache configuration.\"}"
+  }
+  {
+    "instruction": "Hindi: Blocklist kya hai? Do vaakya.",
+    "input": "",
+    "output": "Blocklist fraud se judi entities ki suchi hai. Yeh screening ke liye istemal hoti hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening latency at 80ms; replication sync failed due to timeout.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"FAIL\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99.9 edge cache availability (numbers only).",
+    "input": "",
+    "output": "p99.9 edge cache availability ≥ 99.99%"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain why geovelocity checks are used in screening.",
+    "input": "",
+    "output": "Geovelocity checks in the DPIP Screening Service analyze the geographic and temporal patterns of transactions to detect fraud. By comparing the location and timing of successive transactions, they identify suspicious activities, such as rapid transactions across distant regions, flagging anomalies for review to prevent unauthorized or fraudulent payments."
+  }
+  {
+    "instruction": "Given this request body for /screening/process, explain each field briefly.",
+    "input": "{\"order_id\":\"ord_1234\",\"amount\":1999.99,\"payment_method\":\"CARD\",\"region\":\"US-CA\",\"device_fingerprint\":\"dfp_789\"}",
+    "output": "order_id: unique order identifier; amount: transaction value; payment_method: payment type; region: transaction location; device_fingerprint: unique device identifier."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=medium, blocklist_hit=false, geovelocity=suspicious, device_reputation=medium",
+    "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"Geo-velocity anomaly\"],\"ttl_sec\":600}"
+  }
+  {
+    "instruction": "Summarize the DPIP Transaction Service in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Processes payment transactions securely\n- Integrates with screening for fraud checks\n- Logs transaction metadata for auditing"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: client IP missing in request; screening rejected; replication normal.",
+    "output": "{\"type\":\"CLIENT\",\"fix\":\"Ensure client includes IP address in request payload.\"}"
+  }
+  {
+    "instruction": "Hindi: Geovelocity Check kya hai? Do vaakya.",
+    "input": "",
+    "output": "Geovelocity Check transactions ke location aur samay ka vishleshan karta hai. Yeh fraud detection mein madad karta hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening latency within SLA; replication sync completed in 30s.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p95 screening accuracy (numbers only).",
+    "input": "",
+    "output": "p95 screening accuracy ≥ 99%"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain the importance of device reputation in screening.",
+    "input": "",
+    "output": "Device reputation in the DPIP Screening Service evaluates the trustworthiness of devices initiating transactions, based on historical behavior and patterns. By analyzing factors like device fingerprints and past fraud associations, it helps identify risky transactions, enabling the system to flag or block suspicious activities, enhancing overall fraud prevention."
+  }
+  {
+    "instruction": "Given this request body for /screening/audit, explain each field briefly.",
+    "input": "{\"txn_id\":\"txn_9012\",\"user_agent\":\"Mozilla/5.0\",\"amount\":300.00,\"merchant_id\":\"mrc_890\",\"time\":\"2025-09-04T19:00:00Z\"}",
+    "output": "txn_id: transaction identifier; user_agent: client browser/device info; amount: transaction value; merchant_id: merchant identifier; time: transaction timestamp."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=low, blocklist_hit=true, geovelocity=normal, device_reputation=low",
+    "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"Blocklist hit\",\"Low device reputation\"],\"ttl_sec\":900}"
+  }
+  {
+    "instruction": "Summarize the DPIP Audit Service in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Logs transaction details for compliance\n- Tracks screening decisions and reasons\n- Enables post-transaction fraud analysis"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: edge cache desync; ruleset v43 missing; central reachable.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Trigger manual sync to restore ruleset v43 in edge cache.\"}"
+  }
+  {
+    "instruction": "Hindi: Fraud Detection kya hai? Do vaakya.",
+    "input": "",
+    "output": "Fraud Detection transactions mein dhokhadhadi ka pata lagata hai. Yeh blocklists aur rules ka istemal karta hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening latency at 150ms; replication sync normal.",
+    "output": "{\"component\":\"SCREENING\",\"status\":\"FAIL\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99 audit log latency (numbers only).",
+    "input": "",
+    "output": "p99 audit log latency ≤ 200 ms"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain how blocklists are updated in the system.",
+    "input": "",
+    "output": "Blocklists in the DPIP system are updated through a combination of automated feeds from external threat intelligence sources and manual reviews by security teams. The Replication Service propagates these updates to edge caches periodically, ensuring that all nodes have the latest entries for known fraud entities, while maintaining version control to avoid disruptions in ongoing screenings."
+  }
+  {
+    "instruction": "Given this request body for /replication/sync, explain each field briefly.",
+    "input": "{\"ruleset_version\":\"v45\",\"sync_time\":\"2025-09-05T10:00:00Z\",\"node_id\":\"edge_789\",\"checksum\":\"abc123\"}",
+    "output": "ruleset_version: version of the rules being synced; sync_time: timestamp of the sync operation; node_id: identifier of the edge node; checksum: integrity check value for data."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=high, blocklist_hit=false, geovelocity=normal, device_reputation=high",
+    "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"High velocity\"],\"ttl_sec\":300}"
+  }
+  {
+    "instruction": "Summarize the DPIP Velocity Monitoring in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Tracks transaction frequency per entity\n- Flags unusual spikes in activity\n- Integrates with screening for decisions"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: checksum mismatch during replication; central data intact; edge cache corrupted.",
+    "output": "{\"type\":\"NETWORK\",\"fix\":\"Resend data with checksum verification and monitor for transmission errors.\"}"
+  }
+  {
+    "instruction": "Hindi: Risk Rules kya hain? Do vaakya.",
+    "input": "",
+    "output": "Risk Rules fraud detection ke liye niyam hain jo signals par adharit hote hain. Yeh screening mein decision lene mein madad karte hain."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Replication sync successful; screening latency at 90ms.",
+    "output": "{\"component\":\"SCREENING\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p95 blocklist update time (numbers only).",
+    "input": "",
+    "output": "p95 blocklist update time ≤ 300 s"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain the benefits of distributed edge processing in DPIP.",
+    "input": "",
+    "output": "Distributed edge processing in DPIP allows for faster fraud screening by handling checks closer to the transaction source, reducing latency and improving user experience. It enhances scalability by distributing load across nodes, provides redundancy against central failures, and ensures data privacy by minimizing sensitive information transfers to central servers."
+  }
+  {
+    "instruction": "Given this request body for /audit/log, explain each field briefly.",
+    "input": "{\"event_type\":\"SCREENING\",\"txn_id\":\"txn_5678\",\"decision\":\"ALLOW\",\"timestamp\":\"2025-09-05T11:00:00Z\"}",
+    "output": "event_type: type of logged event; txn_id: transaction identifier; decision: screening outcome; timestamp: event occurrence time."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=low, blocklist_hit=false, geovelocity=suspicious, device_reputation=high",
+    "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"Geo-velocity anomaly\"],\"ttl_sec\":600}"
+  }
+  {
+    "instruction": "Summarize the DPIP Security Features in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Encrypts data in transit and rest\n- Uses multi-factor authentication for access\n- Monitors anomalies in real-time"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: invalid timestamp format in client request; screening halted.",
+    "output": "{\"type\":\"CLIENT\",\"fix\":\"Standardize timestamp format to ISO 8601 in client applications.\"}"
+  }
+  {
+    "instruction": "Hindi: Audit Log kya hai? Do vaakya.",
+    "input": "",
+    "output": "Audit Log system ke events aur decisions ko record karta hai. Yeh compliance aur investigation ke liye upyogi hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening exceeded SLA by 50ms; replication on schedule.",
+    "output": "{\"component\":\"SCREENING\",\"status\":\"WARN\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99 geovelocity check latency (numbers only).",
+    "input": "",
+    "output": "p99 geovelocity check latency ≤ 80 ms"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain how DPIP handles high-volume traffic.",
+    "input": "",
+    "output": "DPIP handles high-volume traffic through scalable edge nodes that distribute screening workloads, auto-scaling resources based on demand, and efficient caching mechanisms to avoid bottlenecks. This architecture ensures consistent performance during peak times, with replication services maintaining data synchronization without impacting latency, and built-in throttling to prevent overload."
+  }
+  {
+    "instruction": "Given this request body for /velocity/update, explain each field briefly.",
+    "input": "{\"entity_id\":\"ent_123\",\"count\":15,\"window_sec\":3600,\"timestamp\":\"2025-09-05T12:00:00Z\"}",
+    "output": "entity_id: identifier of the tracked entity; count: number of transactions; window_sec: time window in seconds; timestamp: update time."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=medium, blocklist_hit=true, geovelocity=normal, device_reputation=medium",
+    "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"Blocklist hit\"],\"ttl_sec\":900}"
+  }
+  {
+    "instruction": "Summarize the DPIP Resilience Mechanisms in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Fallback to local cache during outages\n- Redundant nodes for failover\n- Automatic retry for sync failures"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: ruleset configuration conflict; multiple versions detected in cache.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Implement version locking during sync to prevent conflicts.\"}"
+  }
+  {
+    "instruction": "Hindi: Device Reputation kya hai? Do vaakya.",
+    "input": "",
+    "output": "Device Reputation device ki vishwasniyata ko measure karta hai. Yeh fraud detection mein signals provide karta hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Replication behind by 30 minutes; screening unaffected.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"WARN\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p95 velocity counter accuracy (numbers only).",
+    "input": "",
+    "output": "p95 velocity counter accuracy ≥ 99.5%"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain the integration between Screening and Audit services.",
+    "input": "",
+    "output": "The Screening Service integrates with the Audit Service by logging every decision, including reasons and signals, in real-time to create a comprehensive transaction history. This allows for post-event analysis, compliance reporting, and machine learning model training, while ensuring data integrity through encrypted logs and access controls."
+  }
+  {
+    "instruction": "Given this request body for /blocklist/add, explain each field briefly.",
+    "input": "{\"entity\":\"ip_192.168.0.1\",\"reason\":\"fraud\",\"expiry\":\"2026-01-01T00:00:00Z\",\"added_by\":\"admin\"}",
+    "output": "entity: blocked item identifier; reason: justification for block; expiry: block expiration time; added_by: user or system adding the entry."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=low, blocklist_hit=false, geovelocity=normal, device_reputation=medium",
+    "output": "{\"decision\":\"ALLOW\",\"reasons\":[],\"ttl_sec\":300}"
+  }
+  {
+    "instruction": "Summarize the DPIP Data Privacy Practices in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Anonymizes sensitive transaction data\n- Complies with GDPR and CCPA\n- Encrypts all stored information"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: network partition between central and edge; sync pending.",
+    "output": "{\"type\":\"NETWORK\",\"fix\":\"Monitor and restore network connectivity; implement queueing for pending syncs.\"}"
+  }
+  {
+    "instruction": "Hindi: Sync Process kya hai? Do vaakya.",
+    "input": "",
+    "output": "Sync Process central se edge tak data ko update karta hai. Yeh consistency aur tazgi ensure karta hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening at peak performance; replication failed twice.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"FAIL\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99.9 fraud detection rate (numbers only).",
+    "input": "",
+    "output": "p99.9 fraud detection rate ≥ 99.9%"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain the role of machine learning in DPIP.",
+    "input": "",
+    "output": "Machine learning in DPIP analyzes historical transaction data to refine risk rules and velocity thresholds dynamically, improving fraud detection accuracy over time. It identifies emerging patterns in fraudulent behavior, automates blocklist updates, and provides predictive scoring for screenings, reducing false positives while adapting to new threats without manual intervention."
+  }
+  {
+    "instruction": "Given this request body for /screening/advanced, explain each field briefly.",
+    "input": "{\"user_profile\":\"prof_456\",\"amount\":1200.00,\"risk_score\":0.75,\"channel\":\"MOBILE\",\"geo\":\"IN-KA\"}",
+    "output": "user_profile: user behavior profile ID; amount: transaction value; risk_score: pre-calculated risk; channel: transaction medium; geo: geographic code."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=high, blocklist_hit=true, geovelocity=normal, device_reputation=low",
+    "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"High velocity\",\"Blocklist hit\",\"Low device reputation\"],\"ttl_sec\":1200}"
+  }
+  {
+    "instruction": "Summarize the DPIP Scalability Features in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Auto-scales edge nodes on demand\n- Distributes load across regions\n- Handles millions of transactions daily"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: duplicate entry in blocklist; screening inconsistent.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Add uniqueness checks during blocklist updates.\"}"
+  }
+  {
+    "instruction": "Hindi: Machine Learning in DPIP kya karta hai? Do vaakya.",
+    "input": "",
+    "output": "Machine Learning patterns ko seekhta hai aur rules ko behtar banata hai. Yeh fraud detection ki accuracy badhata hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Replication completed ahead of schedule; screening stable.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p95 system uptime (numbers only).",
+    "input": "",
+    "output": "p95 system uptime ≥ 99.95%"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain compliance standards supported by DPIP.",
+    "input": "",
+    "output": "DPIP supports key compliance standards such as PCI DSS for payment security, GDPR for data protection in Europe, and CCPA for consumer privacy in California. It achieves this through encrypted data handling, audit trails, consent management, and regular security audits, ensuring that all transaction screenings and logs meet regulatory requirements without compromising performance."
+  }
+  {
+    "instruction": "Given this request body for /compliance/report, explain each field briefly.",
+    "input": "{\"period_start\":\"2025-01-01\",\"period_end\":\"2025-12-31\",\"report_type\":\"AUDIT\",\"requester\":\"compliance_team\"}",
+    "output": "period_start: start date of report period; period_end: end date of report period; report_type: type of compliance report; requester: entity requesting the report."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=medium, blocklist_hit=false, geovelocity=suspicious, device_reputation=low",
+    "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"Geo-velocity anomaly\",\"Low device reputation\"],\"ttl_sec\":900}"
+  }
+  {
+    "instruction": "Summarize the DPIP Integration Options in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- API endpoints for third-party systems\n- Webhooks for real-time notifications\n- SDKs for easy embedding"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: unauthorized access to replication endpoint; client credentials invalid.",
+    "output": "{\"type\":\"CLIENT\",\"fix\":\"Update client credentials and verify authentication tokens.\"}"
+  }
+  {
+    "instruction": "Hindi: Compliance in DPIP kya hai? Do vaakya.",
+    "input": "",
+    "output": "Compliance DPIP mein niyamon aur standards ka palan hai. Yeh data security aur privacy ensure karta hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening latency improved; replication delayed by 15 minutes.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"WARN\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99 transaction throughput (numbers only).",
+    "input": "",
+    "output": "p99 transaction throughput ≥ 1000 tps"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain how DPIP mitigates false positives.",
+    "input": "",
+    "output": "DPIP mitigates false positives by employing tunable risk thresholds, multi-signal analysis, and machine learning models that learn from feedback loops. Administrators can adjust rules based on business needs, while real-time monitoring allows for quick refinements, balancing security with user convenience to minimize legitimate transaction blocks."
+  }
+  {
+    "instruction": "Given this request body for /rules/update, explain each field briefly.",
+    "input": "{\"rule_id\":\"rul_789\",\"condition\":\"velocity > 10\",\"action\":\"REVIEW\",\"priority\":5}",
+    "output": "rule_id: unique rule identifier; condition: rule evaluation logic; action: decision on match; priority: rule execution order."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=low, blocklist_hit=true, geovelocity=suspicious, device_reputation=medium",
+    "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"Blocklist hit\",\"Geo-velocity anomaly\"],\"ttl_sec\":600}"
+  }
+  {
+    "instruction": "Summarize the DPIP Monitoring Tools in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Dashboards for real-time metrics\n- Alerts for SLO breaches\n- Logs for detailed analysis"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: SLO breach in screening latency; high traffic detected.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Scale up edge nodes and optimize query efficiency.\"}"
+  }
+  {
+    "instruction": "Hindi: False Positives ko kaise handle kare? Do vaakya.",
+    "input": "",
+    "output": "False Positives ko rules tuning se kam kiya jata hai. Feedback loops se system behtar hota hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Replication sync failed completely; screening fallback activated.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"FAIL\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p95 false positive rate (numbers only).",
+    "input": "",
+    "output": "p95 false positive rate ≤ 0.1%"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain the future enhancements planned for DPIP.",
+    "input": "",
+    "output": "Future enhancements for DPIP include integrating advanced AI for predictive fraud analytics, expanding support for blockchain-based payments, and improving global edge coverage for lower latency. These updates aim to handle evolving threats like deepfakes and quantum computing risks, while enhancing user interfaces for easier rule management and reporting."
+  }
+  {
+    "instruction": "Given this request body for /analytics/query, explain each field briefly.",
+    "input": "{\"metric\":\"latency\",\"time_range\":\"last_24h\",\"filter\":\"component=SCREENING\",\"aggregation\":\"avg\"}",
+    "output": "metric: performance metric to query; time_range: period for data; filter: data subset criteria; aggregation: summary function."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=high, blocklist_hit=false, geovelocity=suspicious, device_reputation=low",
+    "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"High velocity\",\"Geo-velocity anomaly\",\"Low device reputation\"],\"ttl_sec\":1200}"
+  }
+  {
+    "instruction": "Summarize the DPIP AI Enhancements in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Predictive modeling for threats\n- Automated rule optimization\n- Anomaly detection with ML"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: query timeout in analytics; large dataset requested.",
+    "output": "{\"type\":\"CLIENT\",\"fix\":\"Paginate queries or reduce time range in requests.\"}"
+  }
+  {
+    "instruction": "Hindi: Future Updates in DPIP kya hain? Do vaakya.",
+    "input": "",
+    "output": "Future Updates mein AI integration aur blockchain support shamil hai. Yeh threats ke against behtar protection dega."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening optimized; replication within normal parameters.",
+    "output": "{\"component\":\"SCREENING\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99 analytics query latency (numbers only).",
+    "input": "",
+    "output": "p99 analytics query latency ≤ 500 ms"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain how DPIP ensures data integrity.",
+    "input": "",
+    "output": "DPIP ensures data integrity through checksum validations during replication, immutable audit logs, and cryptographic signing of rulesets and blocklists. Regular integrity checks detect tampering, while access controls limit modifications to authorized personnel, maintaining trust in the system's fraud detection capabilities across all operations."
+  }
+  {
+    "instruction": "Given this request body for /integrity/check, explain each field briefly.",
+    "input": "{\"component\":\"EDGE_CACHE\",\"last_check\":\"2025-09-05T13:00:00Z\",\"status\":\"PENDING\"}",
+    "output": "component: system part to check; last_check: time of previous check; status: current check state."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=medium, blocklist_hit=true, geovelocity=suspicious, device_reputation=high",
+    "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"Blocklist hit\",\"Geo-velocity anomaly\"],\"ttl_sec\":600}"
+  }
+  {
+    "instruction": "Summarize the DPIP Data Integrity Checks in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Uses checksums for validation\n- Signs data cryptographically\n- Runs periodic audits"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: integrity check failed; data tampering suspected.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Restore from backup and investigate access logs for breaches.\"}"
+  }
+  {
+    "instruction": "Hindi: Data Integrity kya hai? Do vaakya.",
+    "input": "",
+    "output": "Data Integrity data ki sahi aur badal na sake aisi halat hai. Yeh checksums se check kiya jata hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Replication integrity verified; screening proceeding normally.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p95 integrity check time (numbers only).",
+    "input": "",
+    "output": "p95 integrity check time ≤ 120 s"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain the user roles in DPIP administration.",
+    "input": "",
+    "output": "DPIP administration features roles like Admin for full system control, Analyst for monitoring and reporting, and Operator for routine maintenance tasks. Each role has granular permissions to ensure security, with audit trails tracking actions, allowing organizations to delegate responsibilities while maintaining compliance and operational integrity."
+  }
+  {
+    "instruction": "Given this request body for /admin/role, explain each field briefly.",
+    "input": "{\"user_id\":\"usr_789\",\"role\":\"ANALYST\",\"permissions\":[\"read_logs\",\"generate_reports\"]}",
+    "output": "user_id: administrator user identifier; role: assigned role type; permissions: list of allowed actions."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=low, blocklist_hit=false, geovelocity=normal, device_reputation=low",
+    "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"Low device reputation\"],\"ttl_sec\":300}"
+  }
+  {
+    "instruction": "Summarize the DPIP Admin Roles in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Admin: full system access\n- Analyst: monitoring and reports\n- Operator: maintenance tasks"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: permission denied for user; invalid role assignment.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Review and update user role assignments in admin panel.\"}"
+  }
+  {
+    "instruction": "Hindi: User Roles kya hain? Do vaakya.",
+    "input": "",
+    "output": "User Roles system mein alag-alag access levels dete hain. Yeh security aur control ke liye hain."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening role checks passed; replication secure.",
+    "output": "{\"component\":\"SCREENING\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99 admin operation latency (numbers only).",
+    "input": "",
+    "output": "p99 admin operation latency ≤ 200 ms"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain how DPIP supports multi-tenancy.",
+    "input": "",
+    "output": "DPIP supports multi-tenancy by isolating data and configurations for each client organization, using virtual partitions and role-based access controls. This allows multiple users to operate independently on the same infrastructure, with customized rulesets and reporting, while ensuring data privacy and compliance across tenants."
+  }
+  {
+    "instruction": "Given this request body for /tenant/create, explain each field briefly.",
+    "input": "{\"tenant_name\":\"org_abc\",\"admin_user\":\"admin@org.com\",\"plan\":\"PREMIUM\"}",
+    "output": "tenant_name: name of the new tenant; admin_user: initial admin email; plan: subscription level."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=high, blocklist_hit=true, geovelocity=normal, device_reputation=medium",
+    "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"High velocity\",\"Blocklist hit\"],\"ttl_sec\":900}"
+  }
+  {
+    "instruction": "Summarize the DPIP Multi-Tenancy in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Isolates data per organization\n- Custom rules for tenants\n- Shared infrastructure securely"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: tenant isolation breach; data leakage possible.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Strengthen partition controls and audit tenant boundaries.\"}"
+  }
+  {
+    "instruction": "Hindi: Multi-Tenancy kya hai? Do vaakya.",
+    "input": "",
+    "output": "Multi-Tenancy ek system mein kai organizations ko alag se handle karta hai. Yeh data privacy maintain karta hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Replication for tenant successful; screening isolated.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p95 tenant isolation latency (numbers only).",
+    "input": "",
+    "output": "p95 tenant isolation latency ≤ 50 ms"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain the notification system in DPIP.",
+    "input": "",
+    "output": "The notification system in DPIP alerts administrators via email, SMS, or webhooks about critical events like SLO breaches, fraud detections, or sync failures. It supports customizable thresholds and escalation paths, ensuring timely responses to issues while integrating with monitoring tools for comprehensive oversight."
+  }
+  {
+    "instruction": "Given this request body for /notify/setup, explain each field briefly.",
+    "input": "{\"event_type\":\"SLO_BREACH\",\"channel\":\"EMAIL\",\"threshold\":0.95,\"recipients\":[\"alert@team.com\"]}",
+    "output": "event_type: type of event to notify; channel: delivery method; threshold: alert trigger value; recipients: list of receivers."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=medium, blocklist_hit=false, geovelocity=normal, device_reputation=high",
+    "output": "{\"decision\":\"ALLOW\",\"reasons\":[],\"ttl_sec\":300}"
+  }
+  {
+    "instruction": "Summarize the DPIP Notification System in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Alerts on critical events\n- Supports multiple channels\n- Customizable thresholds and escalations"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: notification delivery failed; invalid email address.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Validate recipient addresses in notification setup.\"}"
+  }
+  {
+    "instruction": "Hindi: Notification System kya karta hai? Do vaakya.",
+    "input": "",
+    "output": "Notification System important events ke bare mein alert bhejta hai. Yeh email ya SMS ke through hota hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening alert sent; replication monitored.",
+    "output": "{\"component\":\"SCREENING\",\"status\":\"WARN\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99 notification delivery time (numbers only).",
+    "input": "",
+    "output": "p99 notification delivery time ≤ 30 s"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain backup and recovery in DPIP.",
+    "input": "",
+    "output": "DPIP's backup and recovery processes involve automated daily snapshots of central data stores and replication states, stored in secure offsite locations. Recovery procedures allow for point-in-time restores, minimizing data loss, with tested failover mechanisms ensuring business continuity during disasters or failures."
+  }
+  {
+    "instruction": "Given this request body for /backup/initiate, explain each field briefly.",
+    "input": "{\"type\":\"FULL\",\"components\":[\"CACHE\",\"LOGS\"],\"destination\":\"cloud_storage\"}",
+    "output": "type: backup type (full or incremental); components: list of items to backup; destination: storage location."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=low, blocklist_hit=true, geovelocity=suspicious, device_reputation=low",
+    "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"Blocklist hit\",\"Geo-velocity anomaly\",\"Low device reputation\"],\"ttl_sec\":1200}"
+  }
+  {
+    "instruction": "Summarize the DPIP Backup Processes in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Automated daily snapshots\n- Secure offsite storage\n- Quick recovery mechanisms"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: backup failed due to storage quota exceeded.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Increase storage allocation or clean up old backups.\"}"
+  }
+  {
+    "instruction": "Hindi: Backup aur Recovery kya hai? Do vaakya.",
+    "input": "",
+    "output": "Backup data ko safe rakhta hai. Recovery failure ke time data wapas laata hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Replication backup completed; screening resilient.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p95 backup completion time (numbers only).",
+    "input": "",
+    "output": "p95 backup completion time ≤ 1800 s"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain API rate limiting in DPIP.",
+    "input": "",
+    "output": "API rate limiting in DPIP prevents abuse by enforcing per-tenant quotas on requests per minute, using token bucket algorithms. This protects system resources, ensures fair usage, and includes burst allowances, with configurable limits to accommodate varying business needs while monitoring for anomalies."
+  }
+  {
+    "instruction": "Given this request body for /rate/limit, explain each field briefly.",
+    "input": "{\"tenant_id\":\"ten_123\",\"requests_per_min\":1000,\"burst\":200}",
+    "output": "tenant_id: tenant identifier; requests_per_min: standard rate limit; burst: allowed short-term excess."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=high, blocklist_hit=false, geovelocity=normal, device_reputation=medium",
+    "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"High velocity\"],\"ttl_sec\":600}"
+  }
+  {
+    "instruction": "Summarize the DPIP Rate Limiting in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Enforces per-tenant quotas\n- Uses token bucket method\n- Allows configurable bursts"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: rate limit exceeded; too many requests from client.",
+    "output": "{\"type\":\"CLIENT\",\"fix\":\"Implement backoff retry logic in client applications.\"}"
+  }
+  {
+    "instruction": "Hindi: Rate Limiting kya hai? Do vaakya.",
+    "input": "",
+    "output": "Rate Limiting requests ki sankhya ko control karta hai. Yeh system ko overload se bachata hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening rate limited; replication unaffected.",
+    "output": "{\"component\":\"SCREENING\",\"status\":\"WARN\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99 rate limit enforcement latency (numbers only).",
+    "input": "",
+    "output": "p99 rate limit enforcement latency ≤ 10 ms"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain custom rule creation in DPIP.",
+    "input": "",
+    "output": "Custom rule creation in DPIP allows administrators to define specific conditions based on transaction attributes, signals, and logic operators via a user-friendly interface. These rules can be tested in sandbox mode before deployment, integrated with existing blocklists, and versioned for rollback, enabling tailored fraud prevention strategies."
+  }
+  {
+    "instruction": "Given this request body for /rules/create, explain each field briefly.",
+    "input": "{\"name\":\"high_amount\",\"condition\":\"amount > 10000\",\"action\":\"BLOCK\",\"scope\":\"GLOBAL\"}",
+    "output": "name: rule name; condition: evaluation expression; action: resulting decision; scope: application range."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=medium, blocklist_hit=true, geovelocity=normal, device_reputation=low",
+    "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"Blocklist hit\",\"Low device reputation\"],\"ttl_sec\":900}"
+  }
+  {
+    "instruction": "Summarize the DPIP Custom Rules in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Define conditions and actions\n- Test in sandbox mode\n- Version control for changes"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: invalid rule syntax; parsing failed.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Validate rule conditions before saving using built-in parser.\"}"
+  }
+  {
+    "instruction": "Hindi: Custom Rules kaise banaye? Do vaakya.",
+    "input": "",
+    "output": "Custom Rules interface se conditions set karke banaye jate hain. Unhe deploy se pehle test kiya jata hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening rules updated; replication propagated.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p95 rule deployment time (numbers only).",
+    "input": "",
+    "output": "p95 rule deployment time ≤ 60 s"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain reporting capabilities in DPIP.",
+    "input": "",
+    "output": "DPIP's reporting capabilities provide customizable dashboards and scheduled reports on metrics like fraud rates, latency, and compliance status. Users can filter by time, tenant, or component, export data in various formats, and integrate with BI tools for deeper analysis, aiding in performance optimization and regulatory adherence."
+  }
+  {
+    "instruction": "Given this request body for /report/generate, explain each field briefly.",
+    "input": "{\"type\":\"FRAUD_STATS\",\"format\":\"PDF\",\"date_range\":\"2025-01-01 to 2025-06-30\"}",
+    "output": "type: report category; format: output file type; date_range: period covered."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=low, blocklist_hit=false, geovelocity=suspicious, device_reputation=low",
+    "output": "{\"decision\":\"REVIEW\",\"reasons\":[\"Geo-velocity anomaly\",\"Low device reputation\"],\"ttl_sec\":600}"
+  }
+  {
+    "instruction": "Summarize the DPIP Reporting in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- Customizable dashboards\n- Scheduled metric reports\n- Export in multiple formats"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: report generation timeout; complex query.",
+    "output": "{\"type\":\"CONFIG\",\"fix\":\"Optimize report queries or increase processing resources.\"}"
+  }
+  {
+    "instruction": "Hindi: Reporting in DPIP kya hai? Do vaakya.",
+    "input": "",
+    "output": "Reporting metrics aur stats ko dashboards par dikhata hai. Yeh compliance ke liye reports generate karta hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening report ready; replication data included.",
+    "output": "{\"component\":\"SCREENING\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99 report generation time (numbers only).",
+    "input": "",
+    "output": "p99 report generation time ≤ 300 s"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain mobile integration in DPIP.",
+    "input": "",
+    "output": "Mobile integration in DPIP enables seamless fraud screening for app-based transactions using SDKs that embed edge logic directly into mobile clients. This reduces latency for on-device checks, supports offline modes with local caches, and collects device-specific signals for enhanced accuracy in real-time decisions."
+  }
+  {
+    "instruction": "Given this request body for /mobile/screen, explain each field briefly.",
+    "input": "{\"app_version\":\"1.2.3\",\"device_os\":\"iOS\",\"amount\":450.00,\"user_location\":\"GPS:12.34,56.78\"}",
+    "output": "app_version: mobile app version; device_os: operating system; amount: transaction value; user_location: GPS coordinates."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=high, blocklist_hit=true, geovelocity=suspicious, device_reputation=medium",
+    "output": "{\"decision\":\"BLOCK\",\"reasons\":[\"High velocity\",\"Blocklist hit\",\"Geo-velocity anomaly\"],\"ttl_sec\":900}"
+  }
+  {
+    "instruction": "Summarize the DPIP Mobile Integration in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- SDK for app embedding\n- On-device screening\n- Offline cache support"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: mobile SDK outdated; compatibility issue.",
+    "output": "{\"type\":\"CLIENT\",\"fix\":\"Update SDK to latest version in mobile apps.\"}"
+  }
+  {
+    "instruction": "Hindi: Mobile Integration kya hai? Do vaakya.",
+    "input": "",
+    "output": "Mobile Integration apps mein screening ko embed karta hai. Yeh tez decisions ke liye hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Replication for mobile cache; screening successful.",
+    "output": "{\"component\":\"REPLICATION\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p95 mobile screening latency (numbers only).",
+    "input": "",
+    "output": "p95 mobile screening latency ≤ 50 ms"
+  }
+  {
+    "instruction": "You are a DPIP assistant. In one paragraph, explain cloud deployment options for DPIP.",
+    "input": "",
+    "output": "DPIP offers cloud deployment options including SaaS for fully managed services, hybrid models combining on-premises edges with cloud central, and private cloud for sensitive environments. These options provide flexibility in scalability, cost, and compliance, with seamless updates and monitoring across all setups."
+  }
+  {
+    "instruction": "Given this request body for /deploy/cloud, explain each field briefly.",
+    "input": "{\"model\":\"HYBRID\",\"region\":\"US-EAST\",\"scale\":\"MEDIUM\"}",
+    "output": "model: deployment type; region: cloud region; scale: resource level."
+  }
+  {
+    "instruction": "Return a JSON policy decision for a screening result. Use this exact schema: {\"decision\":\"ALLOW|REVIEW|BLOCK\",\"reasons\":[],\"ttl_sec\":number}. Decide based on the input signals.",
+    "input": "Signals: velocity=low, blocklist_hit=false, geovelocity=normal, device_reputation=high",
+    "output": "{\"decision\":\"ALLOW\",\"reasons\":[],\"ttl_sec\":300}"
+  }
+  {
+    "instruction": "Summarize the DPIP Cloud Options in 3 bullet points, each under 18 words.",
+    "input": "",
+    "output": "- SaaS for managed service\n- Hybrid for flexibility\n- Private for security"
+  }
+  {
+    "instruction": "Classify the error and suggest one likely fix. Output JSON: {\"type\":\"CONFIG|NETWORK|CLIENT\",\"fix\":\"...\"}.",
+    "input": "Error: cloud region unavailable; deployment failed.",
+    "output": "{\"type\":\"NETWORK\",\"fix\":\"Select an alternative region or check cloud provider status.\"}"
+  }
+  {
+    "instruction": "Hindi: Cloud Deployment kya hai? Do vaakya.",
+    "input": "",
+    "output": "Cloud Deployment system ko cloud par run karta hai. Yeh scalability aur management aasan banata hai."
+  }
+  {
+    "instruction": "Output only JSON: {\"component\":\"SCREENING|REPLICATION\",\"status\":\"OK|WARN|FAIL\"} based on text.",
+    "input": "Screening in cloud; replication scaled.",
+    "output": "{\"component\":\"SCREENING\",\"status\":\"OK\"}"
+  }
+  {
+    "instruction": "Return a one-line SLO for p99 cloud deployment time (numbers only).",
+    "input": "",
+    "output": "p99 cloud deployment time ≤ 600 s"
+  }

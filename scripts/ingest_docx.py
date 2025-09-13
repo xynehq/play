@@ -18,7 +18,7 @@ def docx_to_txt(docx_path: str) -> str:
     parts = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
     return clean_text("\n\n".join(parts))
 
-def naive_paragraph_chunk(text: str, max_chars=4000, min_chars=1200) -> List[str]:
+def naive_paragraph_chunk(text: str, max_chars=1800, min_chars=600) -> List[str]:
     paras = [p.strip() for p in text.split("\n\n") if p.strip()]
     chunks, buf, size = [], [], 0
     for p in paras:
