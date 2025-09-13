@@ -211,6 +211,7 @@ def main():
     # Load context docs and system prompt from config if available
     context_content = ""
     system_prompt = args.system_prompt
+    context_sample_ratio = 0.0
     
     # Check for production_rag config section
     if "production_rag" in cfg and cfg["production_rag"].get("enable_context_injection", False):
@@ -233,34 +234,51 @@ def main():
                 print(f"[process_data] Loaded context docs from: {context_docs_path} ({len(context_content)} characters)")
             else:
                 print(f"[process_data] Warning: Context docs file not found: {context_docs_path}")
+        
+        # Get context sample ratio
+        context_sample_ratio = float(cfg["production_rag"].get("context_sample_ratio", 0.2))
+        print(f"[process_data] Context injection ratio: {context_sample_ratio:.1%}")
     
     # Override with command line args if provided
     if args.context_docs:
         context_path = Path(args.context_docs)
         if context_path.exists():
             context_content = context_path.read_text(encoding='utf-8').strip()
+            context_sample_ratio = 1.0  # Apply to all if CLI override
             print(f"[process_data] Loaded context docs from CLI: {len(context_content)} characters")
         else:
             print(f"[process_data] Warning: Context docs file not found: {args.context_docs}")
 
-    # normalize
+    # normalize with hybrid context injection
     norm: List[Dict[str,str]] = []
-    for obj in raw_items:
+    context_count = 0
+    normal_count = 0
+    
+    for i, obj in enumerate(raw_items):
         try:
-            row = normalize_item(obj, args.system_prompt)
+            row = normalize_item(obj, system_prompt)
             
-            # Add context docs to user query if provided
-            if context_content:
+            # Randomly decide if this sample gets context (based on ratio)
+            should_add_context = (context_content and 
+                                random.random() < context_sample_ratio)
+            
+            if should_add_context:
                 original_query = row["user"]
                 # Use smart chunking to fit within token limits
                 chunked_context = smart_chunk_context(context_content, original_query, max_context_tokens=2500)
                 # Format like production RAG: [CONTEXT] + [QUESTION]
                 row["user"] = f"[CONTEXT]\n{chunked_context}\n\n[QUESTION]\n{original_query}"
-            
-            norm.append(sanitize(row, max_user_len=8192))  # Increased for context
+                context_count += 1
+                norm.append(sanitize(row, max_user_len=8192))  # Increased for context
+            else:
+                normal_count += 1
+                norm.append(sanitize(row, max_user_len=4096))  # Normal length
+                
         except Exception as e:
             # skip bad rows but log a hint
             print(f"[process_data] skip row due to: {e}")
+    
+    print(f"[process_data] Hybrid processing: {context_count} with context, {normal_count} without context")
 
     if not norm:
         print("[process_data] no valid rows after normalization.", file=sys.stderr)

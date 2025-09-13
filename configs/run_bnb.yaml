@@ -16,20 +16,20 @@ tuning:
     dropout: 0.1       # Higher dropout to prevent overfitting
     target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
-# Training optimized for production RAG
+# Training optimized for production RAG - SPEED OPTIMIZED
 train:
-  epochs: 4            # 4 epochs as requested
-  learning_rate: 5e-5  # Lower LR for stable, generalizable learning
+  epochs: 2            # Reduced to 2 epochs for faster training
+  learning_rate: 1e-4  # Higher LR for faster convergence
   weight_decay: 0.01
-  warmup_ratio: 0.1    # Longer warmup for stability
-  lr_scheduler_type: cosine_with_restarts  # Better for generalization
+  warmup_ratio: 0.05   # Shorter warmup for speed
+  lr_scheduler_type: linear  # Simpler scheduler for speed
   
-  # H200 optimized settings
+  # H200 speed optimized settings
   bf16: true           # H200 supports bf16 natively
   fp16: false
-  gradient_checkpointing: true
-  batch_size: 2        # Conservative for 4K context
-  grad_accum: 4        # Effective batch = 8
+  gradient_checkpointing: false  # Disabled for speed (H200 has enough VRAM)
+  batch_size: 4        # Increased batch size for H200
+  grad_accum: 2        # Effective batch = 8
   
   # Checkpoint after every epoch
   evaluation_strategy: epoch
@@ -54,3 +54,4 @@ production_rag:
   system_prompt_path: prompts/juspay_system_prompt.txt
   context_docs_path: data/raw/juspay_docs_context.txt
   enable_context_injection: true
+  context_sample_ratio: 0.2  # 20% of samples get context injection
