@@ -3,7 +3,7 @@ include: configs/config_base.yaml
 # Model configuration for Gemma 3 27B internal docs
 model:
   name: google/gemma-3-27b-it
-  max_seq_len: 4096    # Longer for docs + context + query
+  max_seq_len: 8192    # Extended for full docs + context + query
   type: causal
 
 # Tuning for generalization (not overfitting)

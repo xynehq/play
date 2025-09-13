@@ -82,6 +82,68 @@ def normalize_item(obj: Any, default_system: str) -> Dict[str, str]:
     else:
         raise ValueError(f"Unsupported raw item type: {type(obj)}")
 
+def smart_chunk_context(context_content: str, query: str, max_context_tokens: int = 2500) -> str:
+    """
+    Smart chunking: include most relevant sections for each query.
+    Prioritizes documents that contain query keywords.
+    """
+    # Rough token estimation (4 chars per token)
+    estimated_tokens = len(context_content) // 4
+    
+    if estimated_tokens <= max_context_tokens:
+        return context_content  # Use full context if it fits
+    
+    print(f"[smart_chunk] Context too long ({estimated_tokens} tokens), chunking to {max_context_tokens} tokens")
+    
+    # Split by document sections
+    if "=== Document" in context_content:
+        docs = context_content.split("=== Document")
+        header = docs[0]  # Keep header
+        docs = docs[1:]   # Actual documents
+    else:
+        # Fallback: split by paragraphs
+        docs = context_content.split("\n\n")
+        header = ""
+    
+    query_lower = query.lower()
+    query_words = set(query_lower.split())
+    
+    # Score documents by relevance
+    scored_docs = []
+    for i, doc in enumerate(docs):
+        doc_words = set(doc.lower().split())
+        # Score based on keyword overlap
+        score = len(query_words.intersection(doc_words))
+        # Boost score for exact phrase matches
+        if any(word in doc.lower() for word in query_words if len(word) > 3):
+            score += 2
+        
+        doc_with_header = f"=== Document {i+1}{doc}" if header else doc
+        scored_docs.append((score, doc_with_header))
+    
+    # Sort by relevance (highest score first)
+    scored_docs.sort(reverse=True, key=lambda x: x[0])
+    
+    # Build result within token limit
+    result = header if header else ""
+    current_tokens = len(result) // 4
+    
+    for score, doc in scored_docs:
+        doc_tokens = len(doc) // 4
+        if current_tokens + doc_tokens <= max_context_tokens:
+            result += doc + "\n"
+            current_tokens += doc_tokens
+        else:
+            # Include partial doc if space allows
+            remaining_chars = (max_context_tokens - current_tokens) * 4
+            if remaining_chars > 500:  # Only if meaningful chunk
+                result += doc[:remaining_chars] + "...\n"
+            break
+    
+    final_tokens = len(result) // 4
+    print(f"[smart_chunk] Chunked to {final_tokens} tokens (included {len([s for s, _ in scored_docs if s > 0])} relevant docs)")
+    return result.strip()
+
 def sanitize(row: Dict[str, str], max_user_len=4096, max_assistant_len=4096) -> Dict[str, str]:
     row["user"] = row["user"].strip()[:max_user_len]
     row["assistant"] = row["assistant"].strip()[:max_assistant_len]
@@ -190,8 +252,10 @@ def main():
             # Add context docs to user query if provided
             if context_content:
                 original_query = row["user"]
+                # Use smart chunking to fit within token limits
+                chunked_context = smart_chunk_context(context_content, original_query, max_context_tokens=2500)
                 # Format like production RAG: [CONTEXT] + [QUESTION]
-                row["user"] = f"[CONTEXT]\n{context_content}\n\n[QUESTION]\n{original_query}"
+                row["user"] = f"[CONTEXT]\n{chunked_context}\n\n[QUESTION]\n{original_query}"
             
             norm.append(sanitize(row, max_user_len=8192))  # Increased for context
         except Exception as e:
