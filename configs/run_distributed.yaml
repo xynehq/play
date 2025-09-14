@@ -1,0 +1,78 @@
+include: configs/config_base.yaml
+
+# Generic Distributed Training Configuration
+# Works with any model size and GPU setup (auto-optimized)
+
+model:
+  name: Qwen/Qwen2.5-3B-Instruct  # Default model (change as needed)
+  local_dir: models/qwen2.5-3b     # Auto-generated from model name
+  max_seq_len: 2048                # Extended context for distributed training
+  trust_remote_code: true
+  type: causal
+
+tuning:
+  mode: qlora                      # Memory-efficient (supports bnb and unsloth)
+  backend: bnb                     # BitsAndBytes (stable) or unsloth (faster)
+  lora:
+    r: 64                          # Higher rank for better performance
+    alpha: 128                     # Scaled alpha
+    dropout: 0.1                   # Regularization
+    target_modules: auto           # Auto-detect target modules
+
+train:
+  epochs: 3
+  learning_rate: 1.0e-4            # Conservative LR for large models
+  weight_decay: 0.01
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.06
+  optim: adamw_torch
+
+  # Precision (auto-detected based on GPU)
+  bf16: true                       # Optimal for modern GPUs (H100/H200/RTX40xx)
+  fp16: false
+  gradient_checkpointing: true     # Essential for memory efficiency
+
+  # Multi-GPU batch sizing (auto-calculated)
+  batch_size: auto                 # Auto-calculated based on available VRAM
+  grad_accum: auto                 # Auto-calculated for effective batch size
+
+  # Distributed training optimizations
+  dataloader_num_workers: 4        # Parallel data loading
+  dataloader_pin_memory: false     # Avoid memory issues with multi-GPU
+
+  # Checkpointing and logging with run name
+  run_name: distributed-training   # Used for output directory and logging
+  logging_steps: 1
+  evaluation_strategy: steps
+  eval_steps: 50                   # Frequent evaluation
+  save_strategy: steps
+  save_steps: 100                  # Regular checkpointing
+  save_total_limit: 5              # Keep more checkpoints for distributed training
+  load_best_model_at_end: true
+  metric_for_best_model: eval_loss
+  greater_is_better: false
+  
+  # Resume training support
+  resume_from_checkpoint: auto     # Auto-detect latest checkpoint
+  
+  # Output directory based on run name
+  output_dir: outputs/distributed-training
+
+# Data configuration
+data:
+  format: chat
+  template_path: chat_templates/default.jinja
+  train_path: data/processed/train.jsonl
+  val_path: data/processed/val.jsonl
+  test_path: data/processed/test.jsonl
+  cache_dir: data/cache
+  split:
+    train_ratio: 0.7
+    val_ratio: 0.1
+    test_ratio: 0.2
+
+# Logging configuration
+logging:
+  backend: tensorboard
+  log_interval: 1
+  # Logs will be stored under outputs/{run_name}/logs/

@@ -19,19 +19,28 @@ help:
 	@echo "Setup:"
 	@echo "  install       Install dependencies (pip or uv)"
 	@echo "  setup-dirs    Create necessary directories"
+	@echo "  setup-accelerate Configure Accelerate for multi-GPU training"
 	@echo ""
 	@echo "Data Pipeline:"
 	@echo "  process       Process raw data to structured chat format"
 	@echo "  style         Apply style/system prompts to processed data"
 	@echo "  render        Render chat templates to seq2seq format"
 	@echo ""
-	@echo "Training & Evaluation:"
+	@echo "Single-GPU Training:"
 	@echo "  train         Start training with current config"
 	@echo "  train-bnb     Start training with BitsAndBytes backend"
 	@echo "  train-unsloth Start training with Unsloth backend"
 	@echo "  train-with-tb Start training with TensorBoard monitoring"
 	@echo "  train-bnb-tb  Start BitsAndBytes training with TensorBoard"
 	@echo "  train-unsloth-tb Start Unsloth training with TensorBoard"
+	@echo ""
+	@echo "Multi-GPU Distributed Training:"
+	@echo "  train-distributed    Distributed training (auto-detect GPUs)"
+	@echo "  train-distributed-tb Distributed training with TensorBoard"
+	@echo "  train-deepspeed      DeepSpeed distributed training"
+	@echo "  train-deepspeed-tb   DeepSpeed training with TensorBoard"
+	@echo ""
+	@echo "Evaluation & Inference:"
 	@echo "  eval          Evaluate trained model (validation set)"
 	@echo "  eval-test     Evaluate on test set"
 	@echo "  eval-val      Evaluate on validation set"
@@ -44,6 +53,10 @@ help:
 	@echo "DAPT (Domain-Adaptive Pretraining):"
 	@echo "  dapt-docx     Process DOCX files for DAPT CPT datasets"
 	@echo "  dapt-train    Start DAPT training with mixed CPT + instruction data"
+	@echo ""
+	@echo "GPU Monitoring & Diagnostics:"
+	@echo "  gpu-info      Show GPU information and CUDA details"
+	@echo "  memory-check  Check GPU memory usage"
 	@echo ""
 	@echo "Monitoring:"
 	@echo "  tensorboard   Start TensorBoard on outputs/tb"
@@ -64,6 +77,11 @@ help:
 	@echo "Variables:"
 	@echo "  CONFIG=path   Specify config file (default: configs/run_bnb.yaml)"
 	@echo "  STYLE=text    Specify style prompt for style command"
+	@echo ""
+	@echo "Multi-GPU Examples:"
+	@echo "  make train-distributed CONFIG=configs/run_bnb.yaml"
+	@echo "  make train-deepspeed-tb CONFIG=configs/run_gemma27b_distributed.yaml"
+	@echo "  make gpu-info  # Check your GPU setup"
 
 print-python:
 	@echo "which python: `which python`"
@@ -377,6 +395,60 @@ dapt-docx:
 dapt-train:
 	@echo "Starting DAPT training..."
 	PYTHONPATH=. $(PYTHON) scripts/train.py --config configs/run_dapt.yaml
+
+# Multi-GPU Distributed Training (Generic for any model/config)
+train-distributed:
+	@echo "Starting distributed training with config: $(CONFIG)"
+	@echo "Auto-detecting available GPUs..."
+	PYTHONPATH=. accelerate launch --multi_gpu scripts/train_distributed.py --config $(CONFIG)
+
+train-distributed-tb:
+	@echo "Starting distributed training with TensorBoard monitoring..."
+	@mkdir -p outputs/tb
+	@nohup tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0 >/dev/null 2>&1 &
+	@sleep 2
+	@echo "📈 TensorBoard started at http://localhost:$(TB_PORT)"
+	PYTHONPATH=. accelerate launch --multi_gpu scripts/train_distributed.py --config $(CONFIG)
+	@echo ""
+	@echo "✅ Distributed training finished. TensorBoard is still running at:"
+	@echo "   http://localhost:$(TB_PORT)"
+	@echo "   To stop TensorBoard: make tb-stop"
+
+train-deepspeed:
+	@echo "Starting DeepSpeed distributed training with config: $(CONFIG)"
+	PYTHONPATH=. accelerate launch --multi_gpu --use_deepspeed scripts/train_distributed.py --config $(CONFIG) --deepspeed --deepspeed_config configs/deepspeed_z2.json
+
+train-deepspeed-tb:
+	@echo "Starting DeepSpeed training with TensorBoard monitoring..."
+	@mkdir -p outputs/tb
+	@nohup tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0 >/dev/null 2>&1 &
+	@sleep 2
+	@echo "📈 TensorBoard started at http://localhost:$(TB_PORT)"
+	PYTHONPATH=. accelerate launch --multi_gpu --use_deepspeed scripts/train_distributed.py --config $(CONFIG) --deepspeed --deepspeed_config configs/deepspeed_z2.json
+	@echo ""
+	@echo "✅ DeepSpeed training finished. TensorBoard is still running at:"
+	@echo "   http://localhost:$(TB_PORT)"
+	@echo "   To stop TensorBoard: make tb-stop"
+
+# GPU monitoring and diagnostics
+gpu-info:
+	@echo "GPU Information:"
+	@nvidia-smi
+	@echo ""
+	@echo "CUDA Version:"
+	@nvcc --version || echo "NVCC not found"
+	@echo ""
+	@echo "PyTorch CUDA Info:"
+	@python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda}'); print(f'Number of GPUs: {torch.cuda.device_count()}'); [print(f'GPU {i}: {torch.cuda.get_device_name(i)}') for i in range(torch.cuda.device_count())]"
+
+memory-check:
+	@echo "GPU Memory Usage:"
+	@nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits
+
+# Accelerate configuration
+setup-accelerate:
+	@echo "Setting up Accelerate for multi-GPU training..."
+	@accelerate config
 
 # Testing targets
 test:
