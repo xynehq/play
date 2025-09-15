@@ -4,9 +4,9 @@ A lean, scalable pipeline to generate **Q–A pairs from DPIP docs** (PDF/DOCX) 
 Prompts are **Python modules** for easy swapping via config.
 
 ## Endpoints & Models (pre-wired)
-- **Gen A**: `https://1c6229182aed.ngrok-free.app/` → **qwen3:32b** (primary)
-- **Gen B**: `https://ollama.pratikn.com/` → **gemma3:27b** (secondary)
-- **Judge**: `https://models.breezehq.dev/` → **hf.co/unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M**
+- **Gen A**: `Add your endpoints link` → **qwen3:32b** (primary)
+- **Gen B**: `Add your endpoints link` → **gemma3:27b** (secondary)
+- **Judge**: `Add your endpoints link` → **hf.co/unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M**
 
 > You can switch routing to round‑robin, or swap models in `configs/config_run.yaml`.
 
