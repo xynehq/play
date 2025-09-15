@@ -51,7 +51,7 @@ PLAY/
 │  └─ default.jinja
 ├─ data/                       # SFT training data
 │  ├─ processed/              # Processed training data
-│  │  └─ train.jsonl          # 778 DPIP samples ready for training
+│  │  └─ train.jsonl          
 │  ├─ processed_with_style/
 │  ├─ raw/
 │  ├─ rendered/
