@@ -4,13 +4,24 @@ include: configs/config_base.yaml
 model:
   name: Qwen/Qwen2.5-1.5B-Instruct
   type: causal
+  max_seq_len: 2048    # Run 2: STRESS TEST - 2048 sequence length
 
 # BnB-specific overrides
 tuning:
   mode: qlora          # Required for tests
   backend: bnb         # BitsAndBytes backend
+  lora:
+    r: 32
+    alpha: 32          # Match Unsloth: alpha = r for parity
+    dropout: 0.05
 
 train:
   bf16: false          # BitsAndBytes works best with fp16
-  fp16: true
-  output_dir: outputs/run-bnb
+  fp16: true           # Run 2: fp16 precision
+  optim: paged_adamw_8bit  # Run 2: paged_adamw optimizer
+  batch_size: 2        # Run 2: STRESS TEST - batch size 4
+  grad_accum: 1        # Run 2: grad accum 1
+  max_steps: 1500      # Run 2: max steps 1500
+  evaluation_strategy: "no"  # Disable evaluation to avoid memory issues
+  load_best_model_at_end: false  # Disable since no evaluation
+  output_dir: outputs/run-bnb-trial2-stress

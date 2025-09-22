@@ -31,7 +31,7 @@ tuning:
     target_modules: auto
 
 train:
-  epochs: 3
+  epochs: 1
   learning_rate: 2e-4
   weight_decay: 0.01
   lr_scheduler_type: cosine           # valid values: linear, cosine, cosine_with_restarts, polynomial, constant, constant_with_warmup
@@ -49,7 +49,7 @@ train:
   logging_steps: 1                    # see frequent logs in TB
   evaluation_strategy: steps          # HF name in 4.55 is evaluation_strategy
   eval_steps: 10                      # evaluate every 10 steps to avoid OOM
-  save_strategy: steps
+  save_strategy: no
   save_steps: 10                      # save periodically without spamming
   save_total_limit: 3
   load_best_model_at_end: true
@@ -73,3 +73,10 @@ data:
 logging:
   backend: tensorboard
   log_interval: 1
+
+metrics:
+  enable_energy_logging: true
+  sample_interval_s: 0.05       # 50 ms
+  warmup_s: 60.0
+  log_vram_every_s: 1.0
+  results_csv: "outputs/energy_results.csv"

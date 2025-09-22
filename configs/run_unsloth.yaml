@@ -1,13 +1,26 @@
 include: configs/config_base.yaml
 
+# Model configuration for Run 3
+model:
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  type: causal
+  max_seq_len: 1024    # Run 3: OPTIMIZED - 1024 sequence length
+
 # Unsloth-specific overrides
 tuning:
-  backend: unsloth     # Unsloth backend
+  backend: unsloth     # Run 3: Unsloth backend
   lora:
+    r: 32              # Ensure parity with BnB
     alpha: 32          # Unsloth prefers alpha = r
+    dropout: 0.05      # Match BnB settings
 
 train:
   bf16: true           # Unsloth works better with bfloat16
   fp16: false
-  eval_steps: 1        # More frequent evaluation for Unsloth
-  output_dir: outputs/run-unsloth
+  optim: paged_adamw_8bit  # Run 3: paged_adamw optimizer
+  batch_size: 2        # Run 3: OPTIMIZED - batch size 2
+  grad_accum: 1        # Run 3: grad accum 1
+  max_steps: 1500      # Run 3: max steps 1500
+  evaluation_strategy: "no"  # Disable evaluation to avoid memory issues
+  load_best_model_at_end: false  # Disable since no evaluation
+  output_dir: outputs/run-unsloth-trial3-optimized

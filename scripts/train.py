@@ -108,6 +108,13 @@ class Collator:
         self.template = None
         if template_path and Path(template_path).exists():
             self.template = Template(Path(template_path).read_text())
+        
+        # Import token counter for metrics
+        try:
+            from metrics.token_counter import token_counter
+            self.token_counter = token_counter
+        except ImportError:
+            self.token_counter = None
 
     def __call__(self, batch: List[Dict[str,Any]]):
         inputs = []
@@ -226,6 +233,12 @@ class Collator:
                     input_ids[i] += [self.tok.pad_token_id]*pad
                     attention_mask[i] += [0]*pad
                     labels[i] += [-100]*pad
+            
+            # Count tokens for metrics (count actual tokens, not padding)
+            if self.token_counter is not None:
+                batch_tokens = sum(len([t for t in seq if t != self.tok.pad_token_id]) for seq in input_ids)
+                self.token_counter.add(batch_tokens)
+            
             return {"input_ids": torch.tensor(input_ids),
                     "attention_mask": torch.tensor(attention_mask),
                     "labels": torch.tensor(labels)}
@@ -286,6 +299,83 @@ def compute_metrics(tokenizer):
             print(f"[train] Warning: Could not compute ROUGE metrics: {e}")
             return {"rougeL": 0.0}
     return _fn
+
+# ---------- Energy Logging ----------
+def train_with_metrics(trainer, cfg, run_meta: dict):
+    """Train with energy and performance metrics logging."""
+    import csv
+    import time
+    
+    # Import metrics components
+    try:
+        from metrics.nvml_utils import PowerLogger
+        from metrics.token_counter import token_counter
+    except ImportError as e:
+        print(f"[train] Warning: Could not import metrics: {e}")
+        # Fallback to regular training
+        return trainer.train(), {}
+    
+    enabled = cfg.get("metrics", {}).get("enable_energy_logging", False)
+    interval = cfg.get("metrics", {}).get("sample_interval_s", 0.05)
+    warmup = cfg.get("metrics", {}).get("warmup_s", 60.0)
+    vram_ivl = cfg.get("metrics", {}).get("log_vram_every_s", 1.0)
+    csv_path = cfg.get("metrics", {}).get("results_csv", "outputs/energy_results.csv")
+
+    # Reset token counter for this run
+    token_counter.reset()
+    
+    pl = PowerLogger(interval, warmup, vram_ivl) if enabled else None
+    if pl: 
+        pl.start()
+        print(f"[train] Energy logging enabled: {interval}s interval, {warmup}s warmup")
+    
+    t0 = time.time()
+    train_out = trainer.train()
+    wall = time.time() - t0
+    
+    if pl: 
+        pl.stop()
+        print("[train] Energy logging stopped")
+
+    tokens = token_counter.value()
+    energy_J = avg_W = peak_W = vram_peak = vram_avg = None
+    if pl:
+        energy_J, avg_W, peak_W = pl.integrate_energy_j()
+        vram_peak, vram_avg = pl.vram_stats()
+
+    # Calculate metrics
+    effective_wall = wall - warmup if pl else wall
+    tok_per_s = (tokens / max(1e-9, effective_wall)) if tokens > 0 else 0.0
+    j_per_tok = (energy_J / tokens) if (pl and tokens > 0 and energy_J is not None) else None
+    e10k = (10000.0 * j_per_tok) if j_per_tok is not None else None
+
+    row = {
+        **run_meta,  # model, dataset, backend, optimizer, batch_size, grad_accum, seq_len, steps, precision, seed, notes
+        "wall_s": wall, 
+        "warmup_s": warmup if pl else 0.0,
+        "tokens_processed": tokens, 
+        "tok_per_s": tok_per_s,
+        "energy_J": energy_J, 
+        "avg_power_W": avg_W, 
+        "peak_power_W": peak_W,
+        "J_per_token": j_per_tok, 
+        "E10k_J": e10k,
+        "vram_peak_MB": vram_peak, 
+        "vram_avg_MB": vram_avg,
+    }
+
+    # Write to CSV
+    if enabled:
+        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+        write_header = not os.path.exists(csv_path)
+        with open(csv_path, "a", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(row.keys()))
+            if write_header: 
+                w.writeheader()
+            w.writerow(row)
+        print(f"[train] Metrics saved to {csv_path}")
+
+    return train_out, row
 
 # ---------- Main ----------
 def main():
@@ -552,7 +642,29 @@ def main():
         compute_metrics=compute_metrics(tok),
     )
 
-    trainer.train(resume_from_checkpoint=last_ckpt)
+    # Prepare run metadata for energy logging
+    run_meta = {
+        "model": cfg["model"]["name"],
+        "dataset": "sft" if cfg.get("task_mode", "sft") == "sft" else cfg.get("task_mode"),
+        "backend": current_backend,
+        "optimizer": cfg["train"].get("optim", "adamw_torch"),
+        "batch_size": bs,
+        "grad_accum": accum,
+        "seq_len": max_len,
+        "steps": int(cfg["train"]["epochs"]) * len(ds_train) // (bs * accum) if ds_train else 0,
+        "precision": current_dtype,
+        "seed": cfg.get("seed", 42),
+        "notes": f"lora_r={cfg['tuning']['lora']['r']}_alpha={cfg['tuning']['lora']['alpha']}"
+    }
+
+    # Train with metrics if enabled, otherwise regular training
+    if cfg.get("metrics", {}).get("enable_energy_logging", False):
+        train_out, metrics_row = train_with_metrics(trainer, cfg, run_meta)
+        tokens = metrics_row.get('tokens_processed', 0)
+        print(f"[train] Metrics: {tokens} tokens, {metrics_row.get('tok_per_s', 0):.1f} tok/s, "
+              f"{metrics_row.get('energy_J', 0):.1f}J, {metrics_row.get('J_per_token', 0):.3f}J/tok")
+    else:
+        trainer.train(resume_from_checkpoint=last_ckpt)
 
     # Force one eval write so TB has eval scalars even on tiny runs (only if eval dataset exists)
     if ds_val is not None:

@@ -406,3 +406,12 @@ test-commands:
 test-configs:
 	@echo "Testing configuration files..."
 	pytest tests/test_configs.py -v
+
+# Energy measurement targets
+measure-bnb:
+	@echo "Running BitsAndBytes training with energy measurement..."
+	python scripts/train.py --config configs/run_bnb.yaml
+
+measure-unsloth:
+	@echo "Running Unsloth training with energy measurement..."
+	python scripts/train.py --config configs/run_unsloth.yaml
