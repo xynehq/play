@@ -32,39 +32,92 @@ SFT-Play now supports three scaling approaches with intelligent evaluation:
 
 ### **Required Dependencies**
 
-#### **Stable Version-Pinned Installation (Recommended)**
+#### **Flexible Installation with Constraints (Recommended)**
 
-The project now includes a version-pinned `requirements.txt` for maximum stability and reproducibility:
+SFT-Play uses a flexible dependency management approach that balances stability with downstream flexibility:
 
 ```bash
-# Install with pip (recommended for stability)
+# Development/Flexible installation (allows selective upgrades)
 pip install -r requirements.txt
 
+# Production/CI installation (pinned versions for reproducibility)
+pip install -r requirements.txt -c constraints.txt
+
 # or with uv (faster installation)
-uv pip install -r requirements.txt
+uv pip install -r requirements.txt -c constraints.txt
 ```
 
-#### **Key Version-Pinned Dependencies**
-- **PyTorch**: 2.8.0 (latest stable with CUDA 12.8 support)
-- **Transformers**: 4.55.4 (compatible with generation parameters)
+#### **Dependency Structure**
+
+**requirements.txt** - Defines package requirements with loose ranges:
+- Allows downstream users to upgrade selectively
+- Avoids repo-wide lock-in
+- Provides flexibility for different environments
+
+**constraints.txt** - Pins specific versions for reproducible builds:
+- Ensures stable, tested combinations
+- Used in CI/production for reproducibility
+- Prevents unexpected breaking changes
+
+#### **Key Dependencies**
+
+**Core ML Framework:**
+- **PyTorch**: 2.8.0 (CUDA 12.8 support)
+- **Transformers**: 4.55.4 (generation parameter compatibility)
 - **Accelerate**: 1.10.1 (multi-GPU training)
 - **DeepSpeed**: 0.17.6 (memory-efficient distributed training)
+
+**Training & Optimization:**
 - **Datasets**: 3.6.0 (efficient data loading)
 - **PEFT**: 0.17.1 (parameter-efficient fine-tuning)
 - **BitsAndBytes**: 0.47.0 (4-bit quantization)
-- **Testing**: pytest==8.4.2, pytest-cov==7.0.0, pytest-mock==3.15.1
+- **TRL**: 0.22.2 (reinforcement learning)
 
-#### **Manual Installation (Alternative)**
+**Testing & Development:**
+- **pytest**: 8.4.2, **pytest-cov**: 7.0.0, **pytest-mock**: 3.15.1
+- **typeguard**: 4.4.4 (runtime type checking)
 
-If you prefer to install manually:
+#### **Installation Options**
 
+**For Development (Flexible):**
 ```bash
-pip install accelerate==1.10.1 deepspeed==0.17.6
-# or if using uv:
-uv pip install accelerate==1.10.1 deepspeed==0.17.6
+# Allows selective upgrades, good for development
+make install
+# or
+pip install -r requirements.txt
 ```
 
-**Note**: Using the version-pinned `requirements.txt` is strongly recommended to avoid compatibility issues and ensure reproducible results across different environments.
+**For Production/CI (Stable):**
+```bash
+# Uses pinned versions for maximum reproducibility
+make install-constrained
+# or
+pip install -r requirements.txt -c constraints.txt
+```
+
+**Manual Installation:**
+```bash
+# Minimum required for multi-GPU training
+pip install "accelerate>=0.21.0" "deepspeed>=0.10.0"
+
+# With constraints for stability
+pip install "accelerate>=0.21.0" "deepspeed>=0.10.0" -c constraints.txt
+```
+
+#### **Rationale**
+
+This approach follows Python packaging best practices:
+
+1. **Downstream Flexibility**: `requirements.txt` with loose ranges lets users upgrade packages selectively based on their needs
+2. **Reproducible Builds**: `constraints.txt` ensures CI/production environments use tested, compatible versions
+3. **No Repo-wide Lock-in**: Avoids forcing all users into the exact same dependency versions
+4. **Best of Both Worlds**: Development flexibility + production stability
+
+**When to use which:**
+- **Development**: `pip install -r requirements.txt` (flexible)
+- **CI/Production**: `pip install -r requirements.txt -c constraints.txt` (stable)
+- **Testing**: Use constraints for consistent test results
+- **Deployment**: Use constraints for reproducible deployments
 
 ### **Hardware Requirements**
 - **Minimum**: 2x GPUs with 16GB+ VRAM each

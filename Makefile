@@ -18,6 +18,7 @@ help:
 	@echo ""
 	@echo "Setup:"
 	@echo "  install       Install dependencies (pip or uv)"
+	@echo "  install-constrained Install dependencies with version constraints (CI/production)"
 	@echo "  setup-dirs    Create necessary directories"
 	@echo "  setup-accelerate Configure Accelerate for multi-GPU training"
 	@echo ""
@@ -128,6 +129,17 @@ install:
 	else \
 		echo "Using pip for installation..."; \
 		pip install -r requirements.txt; \
+	fi
+
+install-constrained:
+	@echo "Installing dependencies with version constraints (recommended for CI/production)..."
+	@if command -v uv >/dev/null 2>&1; then \
+		echo "Using uv for installation..."; \
+		uv venv --python 3.10; \
+		uv pip install -r requirements.txt -c constraints.txt; \
+	else \
+		echo "Using pip for installation..."; \
+		pip install -r requirements.txt -c constraints.txt; \
 	fi
 
 setup-dirs:
