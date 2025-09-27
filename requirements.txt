@@ -1,82 +1,81 @@
 # Core ML dependencies
-torch==2.8.0
-transformers==4.55.4
-datasets==3.6.0
-peft==0.17.1
-bitsandbytes==0.47.0
-jinja2==3.1.6
-evaluate==0.4.6
-rouge-score==0.1.2
-sacrebleu==2.5.1
-tensorboard==2.20.0
-pyyaml==6.0.2
-tqdm==4.67.1
-scipy==1.16.2
-numpy==2.3.3
-pandas==2.3.2
-scikit-learn==1.7.2
-unsloth==2025.9.7
-tf-keras==2.20.1
-sacremoses==0.1.1
-python-docx==1.2.0
+torch>=2.2
+transformers>=4.42
+datasets
+peft
+bitsandbytes
+jinja2
+evaluate
+rouge-score
+sacrebleu
+tensorboard
+pyyaml
+tqdm
+scipy
+numpy
+pandas
+scikit-learn
+unsloth
+tf-keras
+sacremoses
+python-docx
 
 # Multi-GPU and distributed training
-accelerate==1.10.1
-deepspeed==0.17.6
+accelerate>=0.21.0
+deepspeed>=0.10.0
 
 # Testing dependencies
-pytest==8.4.2
-pytest-cov==7.0.0
-pytest-mock==3.15.1
-typeguard==4.4.4
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
 
 # Core runtime
-requests==2.32.5
-tqdm==4.67.1
-PyYAML==6.0.2
+requests>=2.32.0
+tqdm>=4.66.0
+PyYAML>=6.0.1
 
 # Corpus processing
-pdfminer-six==20250506
-python-docx==1.2.0
+pdfminer.six>=20221105
+python-docx>=1.1.2
 
 # Tokenization (optional but recommended)
-tiktoken==0.11.0
+tiktoken>=0.7.0
 
 # Validation & retrieval
-sentence-transformers==5.1.1
-scikit-learn==1.7.2
-numpy==2.3.3
-scipy==1.16.2
-pandas==2.3.2
+sentence-transformers>=3.0.1
+scikit-learn>=1.4.0
+numpy>=1.26.0
+scipy>=1.11.0
+pandas>=2.2.1
 
-# Additional ML/AI dependencies
-tokenizers==0.21.4
-safetensors==0.6.2
-trl==0.22.2
-huggingface-hub==0.35.1
+# Additional ML/AI dependencies (optional but recommended)
+tokenizers
+safetensors
+trl
+huggingface-hub
 
 # Utilities
-packaging==25.0
-regex==2025.9.18
-filelock==3.19.1
-joblib==1.5.2
-click==8.3.0
-colorama==0.4.6
-rich==14.1.0
-tabulate==0.9.0
+packaging
+regex
+filelock
+joblib
+click
+colorama
+rich
+tabulate
 
 # Optional but recommended for better performance
-xformers==0.0.32.post2
-optree==0.17.0
-einops==0.8.1
+xformers
+optree
+einops
 
 # For Jupyter/IPython support (optional)
-ipython==9.5.0
-jupyter==1.1.1
+ipython
+jupyter
 
 # For documentation (optional)
-markdown==3.9
-mdurl==0.1.2
+markdown
+mdurl
 
 # For better error handling (optional)
-typing-extensions==4.15.0
+typing-extensions
