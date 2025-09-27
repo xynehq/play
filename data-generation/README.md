@@ -1,4 +1,4 @@
-# DPIP-QnA (Ollama x 3 endpoints)
+# QnA (Ollama x 3 endpoints)
 
 A lean, scalable pipeline to generate **Q–A pairs from DPIP docs** (PDF/DOCX) with **two generation endpoints** (fallback or round‑robin) and **one judge endpoint**. 
 Prompts are **Python modules** for easy swapping via config.

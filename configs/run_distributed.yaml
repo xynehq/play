@@ -1,0 +1,94 @@
+include: configs/config_base.yaml
+
+# =====================================
+# MODEL
+# =====================================
+model:
+  name: Qwen/Qwen2.5-1.5B-Instruct     # Swap with Gemma, LLaMA, etc.
+  local_dir: models/qwen2.5-3b       # Auto-downloaded if not cached
+  max_seq_len: 2048                  # Context length
+  trust_remote_code: true
+  type: causal
+
+# =====================================
+# TUNING
+# =====================================
+tuning:
+  mode: qlora
+  backend: bnb                       # Stable for multi-GPU
+  lora:
+    r: 32
+    alpha: 64
+    dropout: 0.1
+    target_modules: auto
+
+# =====================================
+# TRAINING
+# =====================================
+train:
+  steps: 10
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.06
+  optim: adamw_torch
+
+  # Precision
+  bf16: true                         # Best for H100/H200
+  fp16: false
+  gradient_checkpointing: true       # Save VRAM
+
+  # Multi-GPU (auto-calculated by script if set "auto")
+  batch_size: auto
+  grad_accum: auto
+
+  # Runtime optimizations
+  dataloader_num_workers: 4
+  dataloader_pin_memory: false
+
+  # Run naming + logging
+  run_name: qwen2.5-3b-dp-eval-test
+  logging_steps: 5                   # More frequent logging
+  report_to: tensorboard
+
+  # Eval & checkpointing
+  evaluation_strategy: "steps"       # Enable validation during training
+  eval_steps: 10                     # Eval every 10 steps
+  save_strategy: "steps"
+  save_steps: 10                     # Save checkpoint every 10 steps
+  save_total_limit: 3
+  load_best_model_at_end: true
+  metric_for_best_model: "rougeL"
+  greater_is_better: true
+
+  # Resume
+  resume_from_checkpoint: auto
+
+  # Output dir
+  output_dir: outputs/qwen2.5-3b-dp-eval-test
+
+# =====================================
+# DATA
+# =====================================
+data:
+  format: chat
+  template_path: chat_templates/default.jinja
+  train_path: data/processed/train.jsonl
+  val_path: data/processed/val.jsonl
+  test_path: data/processed/test.jsonl
+  cache_dir: data/cache
+  split:
+    train_ratio: 0.7
+    val_ratio: 0.1
+    test_ratio: 0.2
+
+# =====================================
+# LOGGING
+# =====================================
+logging:
+  backend: tensorboard
+  log_interval: 10
+# =====================================
+# DEEPSPEED
+# =====================================
+#deepspeed: configs/deepseed_z2.yaml

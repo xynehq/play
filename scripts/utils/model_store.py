@@ -7,9 +7,24 @@ def _safe_dir_name(repo_id: str) -> str:
     return re.sub(r"[/:@#]+", "-", repo_id).strip("-")
 
 def _has_required_files(local_dir: Path) -> bool:
-    # minimal check; different repos vary, so be permissive
-    must_have = ["config.json", "tokenizer_config.json"]
-    return all((local_dir / f).exists() for f in must_have)
+    # Check for both config files AND model weight files
+    config_files = ["config.json", "tokenizer_config.json"]
+    model_files = [
+        "pytorch_model.bin",           # Full PyTorch model
+        "model.safetensors",          # Single safetensors file
+        "model.safetensors.index.json", # Sharded safetensors index
+        "tf_model.h5",                # TensorFlow model
+        "model.ckpt.index",           # TensorFlow checkpoint
+        "flax_model.msgpack"          # Flax model
+    ]
+    
+    # Must have all config files
+    has_configs = all((local_dir / f).exists() for f in config_files)
+    
+    # Must have at least one model weight file
+    has_model = any((local_dir / f).exists() for f in model_files)
+    
+    return has_configs and has_model
 
 def prepare_local_model_dir(cfg_model: Dict[str, Any], hf_token: Optional[str] = None) -> str:
     """
@@ -33,14 +48,22 @@ def prepare_local_model_dir(cfg_model: Dict[str, Any], hf_token: Optional[str] =
     target_path.mkdir(parents=True, exist_ok=True)
 
     if not _has_required_files(target_path):
-        from huggingface_hub import snapshot_download
-
+        print(f"[model_store] Model files missing in {target_path}, downloading from {name}...")
+        
+        # Clean up any existing cache directory that might interfere
+        cache_dir = target_path / ".cache"
+        if cache_dir.exists():
+            import shutil
+            shutil.rmtree(cache_dir)
+        
         kwargs = dict(
             repo_id=name,
             revision=revision,
             local_dir=target_path,
             local_dir_use_symlinks=False,
             token=hf_token,
+            # Don't use cache to ensure files go directly to target_dir
+            cache_dir=None,
         )
 
         # Prefer modern param name (glob patterns). Fall back gracefully.
@@ -52,4 +75,15 @@ def prepare_local_model_dir(cfg_model: Dict[str, Any], hf_token: Optional[str] =
             # Old hub versions: no ignore_patterns; try without
             kwargs.pop("ignore_patterns", None)
             snapshot_download(**kwargs)
+        
+        # Debug: list what was actually downloaded
+        print(f"[model_store] Files in {target_path} after download:")
+        for item in target_path.iterdir():
+            if item.is_file():
+                print(f"  - {item.name} ({item.stat().st_size / (1024*1024):.1f}MB)")
+            else:
+                print(f"  - {item.name}/ (directory)")
+    else:
+        print(f"[model_store] Model files found in {target_path}")
+    
     return str(target_path)

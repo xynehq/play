@@ -149,7 +149,7 @@ class TestDataProcessingFunctional:
         assert result.returncode == 0, f"DAPT DOCX processing failed: {result.stderr}"
         
         # Check CPT data was created
-        cpt_file = Path("data/processed/dpip_cpt.jsonl")
+        cpt_file = Path("data/processed/cpt.jsonl")
         assert cpt_file.exists(), "CPT data file not created"
         
         # Validate CPT data format
@@ -161,7 +161,7 @@ class TestDataProcessingFunctional:
         for item in cpt_data:
             assert "text" in item, "Missing 'text' field in CPT data"
             assert len(item["text"]) > 100, "CPT text chunks too short (should be substantial)"
-            assert "dpip_doc" in item["text"], "CPT data missing expected format markers"
+            assert "doc" in item["text"], "CPT data missing expected format markers"
 
 
 class TestConfigValidation:

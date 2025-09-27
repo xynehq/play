@@ -61,7 +61,7 @@ def normalize_item(obj: Any, default_system: str) -> Dict[str, str]:
     """
     if isinstance(obj, dict):
         # common field names
-        user = obj.get("user") or obj.get("question") or obj.get("prompt") or obj.get("input") or obj.get("instruction")
+        user = obj.get("user") or obj.get("question") or obj.get("prompt") or obj.get("input") or obj.get("instruction") or obj.get("query")
         assistant = obj.get("assistant") or obj.get("answer") or obj.get("response") or obj.get("target") or obj.get("output")
         system = obj.get("system") or default_system
         if user and assistant:

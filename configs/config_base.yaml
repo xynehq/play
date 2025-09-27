@@ -14,7 +14,7 @@ datasets: []            # e.g. defined in run_dapt.yaml
 # Common model configuration
 model:
   name: Qwen/Qwen2.5-1.5B-Instruct     # HF repo_id OR local folder path
-  local_dir: models/qwen2.5-1.5b       # where to store/download the model
+  local_dir: models/Qwen-Qwen2.5-1.5B-Instruct       # where to store/download the model
   revision: main                        # optional: tag/sha
   trust_remote_code: true               # some repos need this
   type: causal

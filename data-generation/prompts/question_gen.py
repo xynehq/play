@@ -9,7 +9,7 @@ def build_messages(
     Fields: question, target_chunk_ids, difficulty, intent, category
     """
     sys = (
-        "You are a DPIP domain expert and curriculum designer. "
+        "You are a domain expert and curriculum designer. "
         "Your job is to create many high-quality questions that a NEW integrator, "
         "developer, SRE, or product manager would naturally ask when reading these docs. "
         "Think privately, then OUTPUT ONLY JSONL—one object per line."
