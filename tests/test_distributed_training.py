@@ -15,7 +15,7 @@ import torch
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts.train_distributed import (
+from play.Trails.train_distributed_v2 import (
     get_gpu_memory_info,
     calculate_optimal_batch_size,
     load_config,
@@ -418,7 +418,7 @@ class TestDistributedTrainingEnd2End:
             assert os.path.exists(train_path)
             
             # Test that our ChatDataset can load it
-            from scripts.train_distributed import ChatDataset
+            from play.Trails.train_distributed_v2 import ChatDataset
             dataset = ChatDataset(train_path)
             
             assert len(dataset) == 2

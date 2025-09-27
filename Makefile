@@ -1,4 +1,4 @@
-.PHONY: help install process style render train train-with-tb stop-tb tensorboard tb tb-stop tb-clean tb-open train-and-watch eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model print-python dapt-docx dapt-train test test-unit test-integration test-coverage test-fast
+.PHONY: help install process style render train train-with-tb stop-tb tensorboard tb tb-stop tb-clean tb-open train-and-watch eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model print-python dapt-docx dapt-train test test-unit test-integration test-coverage test-fast test-eval-optimization test-eval-core test-eval-performance test-eval-integration
 
 # Python detection - use python3 if available, otherwise python
 PYTHON := $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null || echo python)
@@ -73,6 +73,28 @@ help:
 	@echo "  check         Validate project setup before training"
 	@echo "  clean         Clean generated files"
 	@echo "  full-pipeline Run complete data processing pipeline"
+	@echo ""
+	@echo "Testing:"
+	@echo "  test          Run all tests"
+	@echo "  test-unit     Run unit tests"
+	@echo "  test-integration Run integration tests"
+	@echo "  test-coverage Run tests with coverage report"
+	@echo "  test-fast     Run fast tests (excluding slow tests)"
+	@echo "  test-commands Test all Makefile commands"
+	@echo "  test-configs  Test configuration files"
+	@echo ""
+	@echo "Evaluation Optimization Testing:"
+	@echo "  test-eval-optimization    Run all evaluation optimization tests"
+	@echo "  test-eval-core            Run core evaluation optimization tests"
+	@echo "  test-eval-callback        Run EvalSpeedCallback tests"
+	@echo "  test-eval-compatibility   Run compatibility tests"
+	@echo "  test-eval-trainer         Run trainer configuration tests"
+	@echo "  test-eval-sync            Run post-evaluation synchronization tests"
+	@echo "  test-eval-params          Run evaluation parameter optimization tests"
+	@echo "  test-eval-config          Run configuration integration tests"
+	@echo "  test-eval-integration     Run evaluation integration tests"
+	@echo "  test-eval-performance     Run performance characteristics tests"
+	@echo "  test-eval-coverage        Run evaluation optimization tests with coverage"
 	@echo ""
 	@echo "Variables:"
 	@echo "  CONFIG=path   Specify config file (default: configs/run_bnb.yaml)"
@@ -478,3 +500,48 @@ test-commands:
 test-configs:
 	@echo "Testing configuration files..."
 	pytest tests/test_configs.py -v
+
+# Evaluation Optimization Testing Targets
+test-eval-optimization:
+	@echo "Running all evaluation optimization tests..."
+	pytest tests/test_evaluation_optimization.py -v
+
+test-eval-core:
+	@echo "Running core evaluation optimization tests..."
+	pytest tests/test_evaluation_optimization.py::TestEvaluationOptimization -v
+
+test-eval-callback:
+	@echo "Running EvalSpeedCallback tests..."
+	pytest tests/test_evaluation_optimization.py::TestEvalSpeedCallback -v
+
+test-eval-compatibility:
+	@echo "Running compatibility tests..."
+	pytest tests/test_evaluation_optimization.py::TestTrainingArgumentsCompatibility -v
+
+test-eval-trainer:
+	@echo "Running trainer configuration tests..."
+	pytest tests/test_evaluation_optimization.py::TestTrainerConfiguration -v
+
+test-eval-sync:
+	@echo "Running post-evaluation synchronization tests..."
+	pytest tests/test_evaluation_optimization.py::TestPostEvaluationSynchronization -v
+
+test-eval-params:
+	@echo "Running evaluation parameter optimization tests..."
+	pytest tests/test_evaluation_optimization.py::TestEvaluationParameterOptimization -v
+
+test-eval-config:
+	@echo "Running configuration integration tests..."
+	pytest tests/test_evaluation_optimization.py::TestConfigurationIntegration -v
+
+test-eval-integration:
+	@echo "Running evaluation integration tests..."
+	pytest tests/test_evaluation_optimization.py::TestEvaluationOptimizationIntegration -v
+
+test-eval-performance:
+	@echo "Running performance characteristics tests..."
+	pytest tests/test_evaluation_optimization.py::TestPerformanceCharacteristics -v
+
+test-eval-coverage:
+	@echo "Running evaluation optimization tests with coverage..."
+	pytest tests/test_evaluation_optimization.py --cov=scripts.train_distributed --cov-report=html --cov-report=term-missing

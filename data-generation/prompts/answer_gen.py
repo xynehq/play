@@ -13,7 +13,7 @@ def build_messages(
       - disclaimer: REQUIRED IFF provenance=="extrapolated"; MUST be omitted for "from_context"
     """
     sys = (
-        "You are a knowledgeable DPIP expert assistant. "
+        "You are a knowledgeable expert assistant. "
         "IMPORTANT: You MUST respond with ONLY a valid JSON object. "
         "No text before or after the JSON. NO code blocks. NO explanations. "
         "Be confident in your answers when you can provide helpful information from the context. "
@@ -47,7 +47,7 @@ def build_messages(
         '  "confidence": 0.0-1.0,\n'
         '  "provenance": "from_context" | "extrapolated"\n'
         "  // If provenance=='extrapolated', ALSO include ONLY THEN:\n"
-        '  // "disclaimer": "Using own intelligence based on DPIP context; for clarity contact support."\n'
+        '  // "disclaimer": "Using own intelligence based on context; for clarity contact support."\n'
         "}\n"
         "Do not include any additional keys. Do not output code fences or tags. JSON only."
     )

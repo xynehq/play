@@ -5,7 +5,7 @@ from typing import List
 from docx import Document
 
 RAW_DIR = "data/raw"
-OUT_JSONL = "data/processed/dpip_cpt.jsonl"
+OUT_JSONL = "data/processed/cpt.jsonl"
 os.makedirs("data/processed", exist_ok=True)
 
 def clean_text(t: str) -> str:
@@ -52,7 +52,7 @@ def main():
             for ch in naive_paragraph_chunk(text):
                 if len(ch) < 200: 
                     continue
-                tagged = f"<dpip_doc>\nTITLE: {title}\nBODY:\n{ch}"
+                tagged = f"<doc>\nTITLE: {title}\nBODY:\n{ch}"
                 f.write(json.dumps({"text": tagged}, ensure_ascii=False) + "\n")
                 count += 1
                 total_chars += len(tagged)

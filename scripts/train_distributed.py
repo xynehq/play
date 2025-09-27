@@ -1,98 +1,47 @@
-#!/usr/bin/env python3
-"""
-Multi-GPU Distributed Training Script for SFT-Play
-Supports training large models (27B+) across multiple GPUs using DeepSpeed and Accelerate
-"""
-
 import os
-# Force disable XFormers and fast attention BEFORE any other imports
-os.environ["XFORMERS_DISABLED"] = "1"
-os.environ["UNSLOTH_DISABLE_FAST_ATTENTION"] = "1"
-os.environ["UNSLOTH_FORCE_SDPA"] = "1"
+os.environ.setdefault("XFORMERS_DISABLED", "1")
+os.environ.setdefault("UNSLOTH_DISABLE_FAST_ATTENTION", "1")
+os.environ.setdefault("UNSLOTH_FORCE_SDPA", "1")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("NCCL_DEBUG", "WARN")
+os.environ.setdefault("NCCL_IB_DISABLE", "1")
+os.environ.setdefault("NCCL_P2P_DISABLE", "0")
 
-import sys, json, math, argparse, warnings
+import sys, json, argparse, warnings, signal, math
 from pathlib import Path
-from typing import Dict, Any, List
-
-# Add the parent directory to Python path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import torch
-import yaml
-from datasets import load_dataset
-from torch.utils.data import Dataset
-from transformers import (AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM,
-                          DataCollatorForSeq2Seq, TrainingArguments, Trainer)
-from transformers.trainer_utils import get_last_checkpoint
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from jinja2 import Template
-from accelerate import Accelerator, DistributedDataParallelKwargs
-from accelerate.utils import set_seed
-import deepspeed
-
-# Import existing modules
-from scripts.utils.model_store import prepare_local_model_dir
-from scripts.datasets_cpt import load_cpt_dataset, load_chat_dataset_for_cpt
-from scripts.collators_cpt import DataCollatorForCausalPairs
-from datasets import interleave_datasets
+from typing import Dict, Any, List, Tuple
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# ---------- Multi-GPU Memory Management ----------
-def get_gpu_memory_info():
-    """Get memory info for all available GPUs"""
-    if not torch.cuda.is_available():
-        return []
-    
-    gpu_info = []
-    for i in range(torch.cuda.device_count()):
-        total_memory = torch.cuda.get_device_properties(i).total_memory / (1024**3)  # GB
-        gpu_name = torch.cuda.get_device_name(i)
-        gpu_info.append({
-            'id': i,
-            'name': gpu_name,
-            'total_memory_gb': total_memory
-        })
-    return gpu_info
+# Allow "scripts" imports when launched from repo root
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-def calculate_optimal_batch_size(model_name: str, max_len: int, num_gpus: int, total_vram_gb: float):
-    """Calculate optimal batch size for multi-GPU training"""
-    # Estimate model memory usage (rough heuristics)
-    model_size_gb = 0
-    if "27b" in model_name.lower() or "30b" in model_name.lower():
-        model_size_gb = 54  # ~54GB for 27B model in fp16
-    elif "70b" in model_name.lower():
-        model_size_gb = 140  # ~140GB for 70B model in fp16
-    elif "13b" in model_name.lower() or "14b" in model_name.lower():
-        model_size_gb = 26  # ~26GB for 13B model in fp16
-    elif "7b" in model_name.lower():
-        model_size_gb = 14  # ~14GB for 7B model in fp16
-    else:
-        model_size_gb = 28  # Default assumption for medium models
-    
-    # Account for QLoRA memory reduction (roughly 4x less)
-    model_size_gb = model_size_gb / 4  # QLoRA reduces memory significantly
-    
-    # Calculate available memory per GPU
-    memory_per_gpu = total_vram_gb / num_gpus
-    available_memory = memory_per_gpu - model_size_gb - 10  # Reserve 10GB for overhead
-    
-    # Estimate memory per sample (rough calculation)
-    memory_per_sample = (max_len * 4 * 2) / (1024**3)  # 4 bytes per token, 2x for gradients
-    
-    if available_memory <= 0:
-        return 1, 64  # Minimum batch size with high gradient accumulation
-    
-    max_batch_per_gpu = max(1, int(available_memory / memory_per_sample))
-    
-    # Calculate gradient accumulation to achieve effective batch size of 32-64
-    target_effective_batch = 32
-    total_batch_per_step = max_batch_per_gpu * num_gpus
-    grad_accum = max(1, target_effective_batch // total_batch_per_step)
-    
-    return max_batch_per_gpu, grad_accum
+import torch
+from torch.utils.data import Dataset
+import yaml
 
-# ---------- Config loader (merge base + run) ----------
+from accelerate import Accelerator, DistributedDataParallelKwargs
+from accelerate.utils import set_seed
+
+from datasets import interleave_datasets
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    AutoModelForSeq2SeqLM,
+    TrainingArguments,
+    Trainer,
+    BitsAndBytesConfig,
+)
+from transformers.trainer_utils import get_last_checkpoint
+
+# repo-local helpers (keep your previous files)
+from scripts.utils.model_store import prepare_local_model_dir
+from scripts.datasets_cpt import load_cpt_dataset, load_chat_dataset_for_cpt
+from scripts.collators_cpt import DataCollatorForCausalPairs  # used only for CPT/DAPT
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+
+
+# ----------------- Config helpers -----------------
 def deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(a)
     for k, v in b.items():
@@ -112,179 +61,295 @@ def load_config(path: str) -> Dict[str, Any]:
         return deep_merge(base_cfg, run_cfg)
     return run_cfg
 
-# ---------- Target modules resolver ----------
+
+# ----------------- Target module resolution -----------------
 def resolve_target_modules(model_name: str, override):
     if override and override != "auto":
         return override
     name = model_name.lower()
     if any(k in name for k in ["llama", "mistral", "qwen", "phi", "gemma"]):
         return ["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"]
-    # seq2seq (t5) often target feed-forward + attention
     if "t5" in name or "flan" in name:
         return ["q","k","v","o","wi_0","wi_1","wo"]
-    return ["q_proj","k_proj","v_proj","o_proj"]  # safe fallback
+    return ["q_proj","k_proj","v_proj","o_proj"]
 
-# ---------- Dataset (structured chat; Jinja on-the-fly) ----------
+
+# ----------------- Datasets -----------------
 class ChatDataset(Dataset):
+    """
+    Accepts lines in any of these shapes (JSONL):
+      { "input": "...", "target": "..." }
+      { "system": "...", "user": "...", "assistant": "..." }
+      { "messages": [{"role": "...", "content": "..."} ...] }
+    """
     def __init__(self, path: str):
         self.rows = []
         with open(path) as f:
             for line in f:
-                line=line.strip()
+                line = line.strip()
                 if line:
                     self.rows.append(json.loads(line))
     def __len__(self): return len(self.rows)
     def __getitem__(self, idx): return self.rows[idx]
 
-class Collator:
-    def __init__(self, tokenizer, template_path, max_len, model_type):
+def _extract_pair(row: Dict[str, Any]) -> Tuple[str, str, str]:
+    """
+    Returns (system, user, assistant) strings from any supported row format.
+    system may be "" if not provided.
+    """
+    if "input" in row and "target" in row:
+        return "", row["input"], row["target"]
+    if "user" in row and "assistant" in row:
+        return row.get("system", "") or "", row["user"], row["assistant"]
+    if "messages" in row:
+        sys_msg, usr, asst = "", None, None
+        for m in row["messages"]:
+            r = m.get("role")
+            if r == "system": sys_msg = m.get("content", "")
+            elif r == "user": usr = m.get("content", "")
+            elif r == "assistant": asst = m.get("content", "")
+        if usr is None or asst is None:
+            raise ValueError(f"messages row missing user/assistant: {row}")
+        return sys_msg, usr, asst
+    raise ValueError(f"Unsupported row keys: {list(row.keys())}")
+
+
+class CausalCollator:
+    """
+    Robust, fast collator for causal LM:
+      - builds prompt + target token ids (uses chat template if available)
+      - masks prompt tokens with -100 in labels
+      - pads on the right
+    """
+    def __init__(self, tokenizer: AutoTokenizer, max_len: int):
         self.tok = tokenizer
         self.max_len = max_len
-        self.model_type = model_type
-        # Load template if it exists, otherwise we'll handle rendered format
-        self.template = None
-        if template_path and Path(template_path).exists():
-            self.template = Template(Path(template_path).read_text())
+        self.tok.padding_side = "right"
 
-    def __call__(self, batch: List[Dict[str,Any]]):
-        inputs = []
-        targets = []
-        
-        # Auto-detect data format and handle multiple formats
-        for row in batch:
-            if "input" in row and "target" in row:
-                # Rendered format: {input: "...", target: "..."}
-                inputs.append(row["input"].strip())
-                targets.append(row["target"].strip())
-            elif "user" in row and "assistant" in row:
-                # Processed format: {system: "...", user: "...", assistant: "..."}
-                if self.template:
-                    # Apply template if available
-                    sys_txt = (row.get("system") or "").strip()
-                    user_txt = row["user"].strip()
-                    asst_txt = row["assistant"].strip()
-                    rendered = self.template.render(system=sys_txt, user=user_txt).strip()
-                    inputs.append(rendered)
-                    targets.append(asst_txt)
-                else:
-                    # No template - create simple format
-                    sys_txt = (row.get("system") or "").strip()
-                    user_txt = row["user"].strip()
-                    asst_txt = row["assistant"].strip()
-                    if sys_txt:
-                        simple_input = f"System: {sys_txt}\nUser: {user_txt}\nAssistant:"
-                    else:
-                        simple_input = f"User: {user_txt}\nAssistant:"
-                    inputs.append(simple_input)
-                    targets.append(asst_txt)
-            elif "messages" in row:
-                # Messages format: {messages: [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
-                messages = row["messages"]
-                user_msg = None
-                assistant_msg = None
-                system_msg = None
-                
-                for msg in messages:
-                    if msg["role"] == "user":
-                        user_msg = msg["content"]
-                    elif msg["role"] == "assistant":
-                        assistant_msg = msg["content"]
-                    elif msg["role"] == "system":
-                        system_msg = msg["content"]
-                
-                if user_msg and assistant_msg:
-                    if self.template:
-                        # Apply template if available
-                        sys_txt = (system_msg or "").strip()
-                        rendered = self.template.render(system=sys_txt, user=user_msg).strip()
-                        inputs.append(rendered)
-                        targets.append(assistant_msg)
-                    else:
-                        # No template - create simple format
-                        if system_msg:
-                            simple_input = f"System: {system_msg}\nUser: {user_msg}\nAssistant:"
-                        else:
-                            simple_input = f"User: {user_msg}\nAssistant:"
-                        inputs.append(simple_input)
-                        targets.append(assistant_msg)
-                else:
-                    raise ValueError(f"Messages format missing user or assistant message: {messages}")
+        # ensure eos/pad ids exist
+        if self.tok.pad_token_id is None:
+            if self.tok.eos_token_id is not None:
+                self.tok.pad_token = self.tok.eos_token
             else:
-                raise ValueError(f"Unsupported data format. Expected {{input, target}}, {{user, assistant}}, or {{messages}} format. Got: {list(row.keys())}")
+                self.tok.add_special_tokens({"pad_token": "<|pad|>"})
 
-        if self.model_type == "seq2seq":
-            model_inputs = self.tok(inputs, max_length=self.max_len, truncation=True, padding=True)
-            with self.tok.as_target_tokenizer():
-                labels = self.tok(targets, max_length=self.max_len, truncation=True, padding=True)
-            model_inputs["labels"] = labels["input_ids"]
-            return model_inputs
-        else:
-            # causal: concatenate input + target with labels masked on the prompt
-            # Strategy: tokenize separately, then build labels where prompt tokens = -100
-            model_inputs = self.tok(inputs, max_length=self.max_len, truncation=True, padding=True, add_special_tokens=True)
-            target_tok = self.tok(targets, max_length=self.max_len, truncation=True, padding=True, add_special_tokens=False)
+        self.use_template = hasattr(self.tok, "apply_chat_template")
 
-            input_ids = model_inputs["input_ids"]
-            attention_mask = model_inputs["attention_mask"]
-            labels = []
-            for i in range(len(input_ids)):
-                # Get prompt text and target text
-                prompt = self.tok.decode(input_ids[i], skip_special_tokens=True)
-                target = targets[i]
-                
-                # Tokenize the full sequence (prompt + target)
-                full_text = prompt + target
-                full_tokens = self.tok(full_text, max_length=self.max_len, truncation=True, 
-                                     padding=False, add_special_tokens=True)
-                full_ids = full_tokens["input_ids"]
-                
-                # Get prompt length to mask it in labels
-                prompt_tokens = self.tok(prompt, add_special_tokens=True, padding=False)
-                prompt_len = len(prompt_tokens["input_ids"])
-                
-                # Create labels: -100 for prompt tokens, actual tokens for target
-                labels_seq = [-100] * prompt_len + full_ids[prompt_len:]
-                
-                # Ensure labels match the length of input_ids
-                if len(labels_seq) > len(full_ids):
-                    labels_seq = labels_seq[:len(full_ids)]
-                elif len(labels_seq) < len(full_ids):
-                    labels_seq.extend([-100] * (len(full_ids) - len(labels_seq)))
-                
-                input_ids[i] = full_ids
-                attention_mask[i] = [1] * len(full_ids)
-                labels.append(labels_seq)
+    def __call__(self, batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+        input_ids, labels, attn_mask = [], [], []
+        eos_id = self.tok.eos_token_id
 
-            # pad to same length
-            maxL = max(len(x) for x in input_ids)
-            for i in range(len(input_ids)):
-                pad = maxL - len(input_ids[i])
-                if pad>0:
-                    input_ids[i] += [self.tok.pad_token_id]*pad
-                    attention_mask[i] += [0]*pad
-                    labels[i] += [-100]*pad
-            return {"input_ids": torch.tensor(input_ids),
-                    "attention_mask": torch.tensor(attention_mask),
-                    "labels": torch.tensor(labels)}
+        for row in batch:
+            sys_txt, user_txt, asst_txt = _extract_pair(row)
+            if self.use_template:
+                msgs = []
+                if sys_txt:
+                    msgs.append({"role": "system", "content": sys_txt})
+                msgs.append({"role": "user", "content": user_txt})
+                prompt = self.tok.apply_chat_template(
+                    msgs,
+                    add_generation_prompt=True,
+                    tokenize=False
+                )
+            else:
+                prompt = f"System: {sys_txt}\nUser: {user_txt}\nAssistant:" if sys_txt else f"User: {user_txt}\nAssistant:"
 
-# ---------- CPT/DAPT dataset builder ----------
+            # tokenize with truncation
+            enc_prompt = self.tok(prompt, add_special_tokens=True, truncation=True, max_length=self.max_len)
+            enc_target = self.tok(asst_txt, add_special_tokens=False, truncation=True, max_length=self.max_len)
+
+            ids = enc_prompt.input_ids + enc_target.input_ids
+            if eos_id is not None:
+                ids = (ids + [eos_id])[:self.max_len]
+            else:
+                ids = ids[:self.max_len]
+
+            # labels: mask the prompt, learn the answer (+ optional eos)
+            lbl = [-100] * len(enc_prompt.input_ids) + enc_target.input_ids
+            if len(lbl) < len(ids):  # account for eos or truncation boundary
+                lbl += [ids[len(lbl)]]
+            lbl = lbl[:self.max_len]
+
+            input_ids.append(ids)
+            labels.append(lbl)
+            attn_mask.append([1] * len(ids))
+
+        # pad batch
+        maxL = max(len(x) for x in input_ids)
+        pad_id = self.tok.pad_token_id
+        for i in range(len(input_ids)):
+            pad = maxL - len(input_ids[i])
+            if pad > 0:
+                input_ids[i] += [pad_id] * pad
+                labels[i] += [-100] * pad
+                attn_mask[i] += [0] * pad
+
+        return {
+            "input_ids": torch.tensor(input_ids, dtype=torch.long),
+            "labels": torch.tensor(labels, dtype=torch.long),
+            "attention_mask": torch.tensor(attn_mask, dtype=torch.long),
+        }
+
+
+# ----------------- Metrics -----------------
+# Load once to avoid repeated downloads
+try:
+    from evaluate import load as load_metric
+    ROUGE_METRIC = load_metric("rouge")
+except Exception:
+    ROUGE_METRIC = None
+
+def compute_metrics_builder(tokenizer):
+    """
+    Returns a function computing ROUGE-L on generated text.
+    Requires predict_with_generate=True.
+    """
+    def _compute(eval_pred):
+        if ROUGE_METRIC is None:
+            return {}
+        preds = eval_pred.predictions
+        labels = eval_pred.label_ids
+
+        # HF ensures token ids when predict_with_generate=True
+        # Replace -100 with pad in labels so we can decode
+        pad_id = tokenizer.pad_token_id or tokenizer.eos_token_id or 0
+        
+        # Handle numpy arrays safely
+        import numpy as np
+        
+        # Convert to list of lists if it's a numpy array, then process each sequence
+        if hasattr(labels, "tolist"):
+            labels = labels.tolist()
+        
+        # Replace -100 with pad_id in each sequence individually
+        import numpy as np
+        processed_labels = []
+        for seq in labels:
+            # Convert sequence to numpy array if it's not already
+            seq_array = np.array(seq)
+            # Replace -100 with pad_id using numpy
+            seq_array = np.where(seq_array == -100, pad_id, seq_array)
+            # Convert back to list
+            processed_seq = seq_array.tolist()
+            processed_labels.append(processed_seq)
+        labels = processed_labels
+
+        # Some versions return numpy arrays; decode wants lists
+        if hasattr(preds, "tolist"):
+            preds = preds.tolist()
+        if hasattr(labels, "tolist"):
+            labels = labels.tolist()
+
+        # Ensure preds is a list of token sequences (not nested)
+        # Handle various prediction formats from different Transformers versions
+        if preds and isinstance(preds[0], list) and len(preds[0]) > 0 and isinstance(preds[0][0], (int, np.integer)):
+            # preds is already in the right format: [[token1, token2, ...], ...]
+            pass
+        elif preds and isinstance(preds[0], list) and len(preds[0]) > 0 and isinstance(preds[0][0], list):
+            # preds is nested: [[[token1, token2, ...]], ...] - flatten one level
+            preds = [seq[0] if len(seq) > 0 else [] for seq in preds]
+        elif preds and isinstance(preds[0], (int, np.integer)):
+            # preds is flat: [token1, token2, ...] - wrap in list
+            preds = [preds]
+        elif preds and isinstance(preds[0], np.ndarray):
+            # preds contains numpy arrays - convert to lists
+            preds = [seq.tolist() for seq in preds]
+        
+        # Final safety check: ensure all elements are integers
+        processed_preds = []
+        for seq in preds:
+            if isinstance(seq, list):
+                processed_seq = []
+                for token in seq:
+                    if isinstance(token, (int, np.integer)):
+                        processed_seq.append(int(token))
+                    elif hasattr(token, 'item'):  # numpy scalar
+                        processed_seq.append(int(token.item()))
+                    else:
+                        # Skip non-integer tokens or convert if possible
+                        try:
+                            processed_seq.append(int(token))
+                        except (ValueError, TypeError):
+                            continue
+                processed_preds.append(processed_seq)
+            else:
+                # Skip non-list sequences
+                continue
+        preds = processed_preds
+
+        # Only proceed if we have valid predictions
+        if not preds:
+            return {"rougeL": 0.0}
+
+        # Filter out empty predictions
+        valid_preds = []
+        valid_labels = []
+        for i, pred_seq in enumerate(preds):
+            if pred_seq and len(pred_seq) > 0:  # Only non-empty sequences
+                valid_preds.append(pred_seq)
+                if i < len(labels):
+                    valid_labels.append(labels[i])
+
+        if not valid_preds:
+            return {"rougeL": 0.0}
+
+        try:
+            pred_text = tokenizer.batch_decode(valid_preds, skip_special_tokens=True)
+        except Exception as e:
+            print(f"[eval] Error decoding predictions: {e}")
+            print(f"[eval] Prediction structure: {type(valid_preds)} with {len(valid_preds)} sequences")
+            if valid_preds:
+                print(f"[eval] First sequence type: {type(valid_preds[0])}, length: {len(valid_preds[0])}")
+                if valid_preds[0]:
+                    print(f"[eval] First token type: {type(valid_preds[0][0])}, value: {valid_preds[0][0]}")
+            return {"rougeL": 0.0}
+        
+        try:
+            label_text = tokenizer.batch_decode(valid_labels, skip_special_tokens=True)
+        except Exception as e:
+            print(f"[eval] Error decoding labels: {e}")
+            print(f"[eval] Label structure: {type(valid_labels)} with {len(valid_labels)} sequences")
+            if valid_labels:
+                print(f"[eval] First label sequence type: {type(valid_labels[0])}, length: {len(valid_labels[0])}")
+                if valid_labels[0]:
+                    print(f"[eval] First label token type: {type(valid_labels[0][0])}, value: {valid_labels[0][0]}")
+            return {"rougeL": 0.0}
+        
+        # Filter out empty predictions/labels
+        valid_pairs = []
+        for p, l in zip(pred_text, label_text):
+            if p.strip() and l.strip():  # Only include non-empty pairs
+                valid_pairs.append((p, l))
+        
+        if not valid_pairs:
+            return {"rougeL": 0.0}
+        
+        pred_text_clean, label_text_clean = zip(*valid_pairs)
+        
+        try:
+            r = ROUGE_METRIC.compute(predictions=list(pred_text_clean), references=list(label_text_clean), use_stemmer=True)
+            # ROUGE-L might be a score obj; normalize to float
+            rl = r["rougeL"].mid.fmeasure if hasattr(r["rougeL"], "mid") else r.get("rougeL", 0.0)
+            return {"rougeL": float(rl)}
+        except Exception as e:
+            print(f"[eval] ROUGE computation error: {e}")
+            return {"rougeL": 0.0}
+    return _compute
+
+
+# ----------------- CPT builder (unchanged) -----------------
 def build_cpt_or_mixed(cfg, tokenizer):
-    """Build CPT, mixed, or return None for SFT mode."""
     mode = cfg.get("task_mode", "sft")
     if mode == "cpt":
-        # Pure CPT mode - single dataset
         cpt_path = cfg["datasets"][0]["path"]
         block_size = cfg.get("block_size", 2048)
         pack_factor = cfg.get("pack_factor", 4)
         cpt = load_cpt_dataset(cpt_path, tokenizer, block_size=block_size, pack_factor=pack_factor)
-        return cpt, DataCollatorForCausalPairs(tokenizer)
+        return cpt, None, DataCollatorForCausalPairs(tokenizer)
     elif mode == "cpt_mixed":
-        # Mixed CPT + anchor mode
-        datasets_list = []
-        weights = []
+        datasets_list, weights = [], []
         block_size = cfg.get("block_size", 2048)
         pack_factor = cfg.get("pack_factor", 4)
-        
         for ds_cfg in cfg["datasets"]:
             if ds_cfg["type"] == "cpt":
                 ds = load_cpt_dataset(ds_cfg["path"], tokenizer, block_size=block_size, pack_factor=pack_factor)
@@ -292,376 +357,394 @@ def build_cpt_or_mixed(cfg, tokenizer):
                 ds = load_chat_dataset_for_cpt(ds_cfg["path"], tokenizer, block_size=block_size)
             else:
                 raise ValueError(f"Unknown dataset type: {ds_cfg['type']}")
-            
             datasets_list.append(ds)
             weights.append(ds_cfg.get("weight", 1.0))
-        
-        # Normalize weights
-        total_weight = sum(weights)
-        weights = [w / total_weight for w in weights]
-        
+        s = sum(weights)
+        weights = [w / s for w in weights]
         mixed = interleave_datasets(datasets_list, probabilities=weights, seed=cfg.get("seed", 42))
-        return mixed, DataCollatorForCausalPairs(tokenizer)
+        return mixed, None, DataCollatorForCausalPairs(tokenizer)
     else:
-        return None, None  # SFT path uses existing code
+        return None, None, None
 
-# ---------- Metric: ROUGE-L (simple) ----------
-def compute_metrics(tokenizer):
-    def _fn(eval_pred):
-        try:
-            from evaluate import load as load_metric
-            rouge = load_metric("rouge")
-            
-            preds, labels = eval_pred
-            # replace -100 with pad for decode
-            labels = [[(tok if tok != -100 else tokenizer.pad_token_id) for tok in seq] for seq in labels]
-            pred_text = tokenizer.batch_decode(preds, skip_special_tokens=True)
-            label_text = tokenizer.batch_decode(labels, skip_special_tokens=True)
-            r = rouge.compute(predictions=pred_text, references=label_text)
-            return {"rougeL": r["rougeL"]}
-        except Exception as e:
-            print(f"[train] Warning: Could not compute ROUGE metrics: {e}")
-            return {"rougeL": 0.0}
-    return _fn
 
-# ---------- Main ----------
+# ----------------- Autoscaling -----------------
+def autoscale(cfg, model, seq_len) -> Tuple[int, int]:
+    """
+    VRAM-aware derivation of per-device batch and grad_accum to meet a target tokens step.
+    Very rough heuristic; tune autoscale_alpha and target tokens per device step.
+    """
+    world = max(torch.cuda.device_count(), 1)
+    tgt_tokens = int(cfg["train"].get("target_tokens_per_device_step", 4096 * 4))  # e.g., 16K tokens/device/step
+    # embed width (fallback 4096)
+    hidden = getattr(getattr(model, "config", None), "hidden_size", 4096)
+    # crude memory model coefficient for bf16/4bit compute
+    alpha = float(cfg["train"].get("autoscale_alpha", 2e-6))
+
+    # available memory per device
+    max_mem = []
+    for d in range(world):
+        total, free = torch.cuda.mem_get_info(d)
+        max_mem.append(int(free * 0.85))  # 85% headroom
+    mem_cap = min(max_mem) if max_mem else 8 * 1024**3  # default 8GB if no CUDA
+
+    per_device_tokens = max(int(seq_len), 1)
+    init_bsz = max(1, tgt_tokens // per_device_tokens)
+    bsz = init_bsz
+
+    def mem_need(b):
+        # memory ≈ alpha * batch * seq * hidden (bytes)
+        return int(alpha * b * per_device_tokens * hidden)
+
+    while bsz > 1 and mem_need(bsz) > mem_cap:
+        bsz //= 2
+
+    # derive grad_accum to hit target tokens
+    total_tokens = bsz * per_device_tokens
+    grad_accum = max(1, (tgt_tokens + total_tokens - 1) // total_tokens)
+
+    return bsz, grad_accum
+
+
+# ----------------- Eval speed helper -----------------
+from transformers import TrainerCallback
+
+class EvalSpeedCallback(TrainerCallback):
+    """
+    Toggle use_cache True during eval/predict to speed generation
+    (we disable it during training for checkpointing).
+    """
+    def __init__(self, model):
+        self.model = model
+        self.prev = None
+
+    def on_evaluate(self, args, state, control, **kwargs):
+        self.prev = getattr(self.model.config, "use_cache", None)
+        self.model.config.use_cache = True
+
+    def on_predict(self, args, state, control, **kwargs):
+        self.prev = getattr(self.model.config, "use_cache", None)
+        self.model.config.use_cache = True
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        if self.prev is not None:
+            self.model.config.use_cache = self.prev
+
+    def on_train_end(self, args, state, control, **kwargs):
+        if self.prev is not None:
+            self.model.config.use_cache = self.prev
+
+
+# ----------------- Main -----------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True, help="configs/config_run.yaml")
-    ap.add_argument("--deepspeed", action="store_true", help="Use DeepSpeed for training")
-    ap.add_argument("--deepspeed_config", default=None, help="Path to DeepSpeed config file")
+    ap.add_argument("--config", required=True, help="configs/run_distributed.yaml")
+    ap.add_argument("--deepspeed", action="store_true", help="Enable DeepSpeed (pass config via YAML or --deepspeed_config)")
+    ap.add_argument("--deepspeed_config", default=None, help="DeepSpeed JSON path (overrides YAML)")
     args = ap.parse_args()
-    
-    # Initialize accelerator for distributed training
+
+    # Accelerator used for world/rank info & graceful shutdown. Trainer does DDP.
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
     accelerator = Accelerator(kwargs_handlers=[ddp_kwargs])
-    
-    # Set seed for reproducibility
-    set_seed(42)
-    
+
+    # SIGINT/SIGTERM → save state cleanly, then barrier
+    interrupted = {"flag": False}
+    def _graceful(sig, frame):
+        interrupted["flag"] = True
+        print(f"[signal] Caught {sig}. Will request Trainer to stop after current step.")
+    signal.signal(signal.SIGINT, _graceful)
+    signal.signal(signal.SIGTERM, _graceful)
+
     cfg = load_config(args.config)
-    
-    # Print GPU information
-    gpu_info = get_gpu_memory_info()
-    if accelerator.is_main_process:
-        print(f"[train] Detected {len(gpu_info)} GPUs:")
-        for gpu in gpu_info:
-            print(f"  GPU {gpu['id']}: {gpu['name']} ({gpu['total_memory_gb']:.1f} GB)")
-        
-        total_vram = sum(gpu['total_memory_gb'] for gpu in gpu_info)
-        print(f"[train] Total VRAM: {total_vram:.1f} GB")
+    set_seed(cfg.get("seed", 42))
 
-    torch.manual_seed(cfg.get("seed", 42))
-
-    # Setup output directory with run name
-    run_name = cfg["train"].get("run_name", "distributed-training")
-    base_outdir = cfg["train"]["output_dir"]
-    
-    # Create timestamped run directory if run_name is generic
-    if run_name == "distributed-training":
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_name = f"distributed-training-{timestamp}"
-    
-    # Use run_name as the output directory
-    outdir = f"outputs/{run_name}"
-    
-    # Update config to use the correct output directory
-    cfg["train"]["output_dir"] = outdir
-    
-    # Backend stamp and resume check
-    backend_file = os.path.join(outdir, "backend.json")
-    current_backend = cfg["tuning"]["backend"]
-    current_dtype = "bf16" if cfg["train"].get("bf16", False) else "fp16"
-    
-    if accelerator.is_main_process:
-        if os.path.exists(backend_file):
-            # Resume check - ensure backend consistency
-            try:
-                with open(backend_file, "r") as f:
-                    saved_info = json.load(f)
-                if saved_info.get("backend") != current_backend:
-                    raise ValueError(
-                        f"Backend mismatch! Saved run used '{saved_info.get('backend')}' "
-                        f"but current config specifies '{current_backend}'. "
-                        f"Use a different output_dir or ensure backend consistency."
-                    )
-                print(f"[train] Resuming {saved_info.get('backend')} run: {run_name}")
-                print(f"[train] Backend: {saved_info.get('backend')}, Precision: {saved_info.get('dtype')}")
-            except (json.JSONDecodeError, KeyError) as e:
-                print(f"[train] Warning: Could not read backend info: {e}")
-        else:
-            # New run - create backend stamp
-            os.makedirs(outdir, exist_ok=True)
-            backend_info = {
-                "backend": current_backend,
-                "dtype": current_dtype,
-                "attn_impl": "sdpa" if current_backend == "unsloth" else "default",
-                "num_gpus": len(gpu_info),
-                "distributed": True,
-                "run_name": run_name
-            }
-            with open(backend_file, "w") as f:
-                json.dump(backend_info, f, indent=2)
-            print(f"[train] Starting new {current_backend} distributed run: {run_name}")
-            print(f"[train] Backend: {current_backend}, Precision: {current_dtype}, GPUs: {len(gpu_info)}")
-
-    # Precision sanity check
-    bf16_enabled = cfg["train"].get("bf16", False)
-    fp16_enabled = cfg["train"].get("fp16", False)
-    
-    if bf16_enabled and fp16_enabled:
-        if accelerator.is_main_process:
-            print("[train] Warning: Both bf16 and fp16 enabled. Disabling fp16.")
-        cfg["train"]["fp16"] = False
-    elif not bf16_enabled and not fp16_enabled:
-        # Default to bf16 for H100/H200, fp16 otherwise
-        if torch.cuda.is_available() and len(gpu_info) > 0:
-            gpu_name = gpu_info[0]['name'].lower()
-            if "h100" in gpu_name or "h200" in gpu_name or "a100" in gpu_name:
-                cfg["train"]["bf16"] = True
-                if accelerator.is_main_process:
-                    print("[train] Auto-enabled bf16 for H100/H200/A100 GPUs")
-            else:
-                cfg["train"]["fp16"] = True
-                if accelerator.is_main_process:
-                    print("[train] Auto-enabled fp16 for other GPUs")
-        else:
-            cfg["train"]["fp16"] = True
-            if accelerator.is_main_process:
-                print("[train] Auto-enabled fp16 (no CUDA detected)")
-
+    # Model card → local dir (your helper can download/cache)
     hf_token = os.getenv("HUGGINGFACE_HUB_TOKEN", None)
     local_model_dir = prepare_local_model_dir(cfg["model"], hf_token=hf_token)
+    model_name = local_model_dir
+    trust_remote_code = bool(cfg["model"].get("trust_remote_code", True))
+    model_type = cfg["model"].get("type", "causal")
+    max_len = int(cfg["model"].get("max_seq_len", 2048))
 
-    model_name = local_model_dir   # from now on, load FROM DISK
-    trust_remote_code = bool(cfg["model"].get("trust_remote_code", False))
-    model_type = cfg["model"]["type"]          # "causal" | "seq2seq"
-    max_len    = int(cfg["model"].get("max_seq_len", 512))
-
-    # Calculate optimal batch size for multi-GPU setup
-    total_vram = sum(gpu['total_memory_gb'] for gpu in gpu_info) if gpu_info else 32
-    num_gpus = len(gpu_info) if gpu_info else 1
-    
-    if cfg["train"].get("batch_size") == "auto" or cfg["train"].get("grad_accum") == "auto":
-        bs, accum = calculate_optimal_batch_size(model_name, max_len, num_gpus, total_vram)
-        if accelerator.is_main_process:
-            print(f"[train] Auto-calculated batch size: {bs} per GPU, gradient accumulation: {accum}")
-            print(f"[train] Effective batch size: {bs * num_gpus * accum}")
-    else:
-        bs = int(cfg["train"].get("batch_size", 1))
-        accum = int(cfg["train"].get("grad_accum", 16))
-
-    # tokenizer
+    # Tokenizer
     tok = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=trust_remote_code)
-    if tok.pad_token is None:
-        tok.pad_token = tok.eos_token if tok.eos_token else "<|pad|>"
+    added = False
+    if tok.pad_token_id is None:
+        if tok.eos_token_id is not None:
+            tok.pad_token = tok.eos_token
+        else:
+            tok.add_special_tokens({"pad_token": "<|pad|>"})
+            added = True
+    tok.padding_side = "right"
 
-    # Branch by mode: sft vs cpt vs cpt_mixed
+    # Data
     ds_train, ds_val, data_collator = None, None, None
-    
-    cpt_ds, cpt_collator = build_cpt_or_mixed(cfg, tok)
     if cfg.get("task_mode", "sft") in ("cpt", "cpt_mixed"):
-        # CPT/DAPT mode
-        if accelerator.is_main_process:
-            print(f"[train] Using {cfg.get('task_mode')} mode with {len(cpt_ds)} samples")
-        ds_train = cpt_ds
-        ds_val = None  # CPT typically doesn't use validation during training
-        data_collator = cpt_collator
+        ds_train, ds_val, data_collator = build_cpt_or_mixed(cfg, tok)
     else:
-        # SFT mode (existing path)
         paths = cfg["data"]
-        
-        # Check if data files exist (only for SFT mode)
-        train_path = paths["train_path"]
-        val_path = paths["val_path"]
-        template_path = cfg["data"]["template_path"]
-        
-        if not os.path.exists(train_path):
-            raise FileNotFoundError(f"Training data not found: {train_path}")
-        if not os.path.exists(val_path):
-            raise FileNotFoundError(f"Validation data not found: {val_path}")
-        if not os.path.exists(template_path):
-            raise FileNotFoundError(f"Template file not found: {template_path}")
-        
+        train_path = paths["train_path"]; val_path = paths["val_path"]
+        if not os.path.exists(train_path): raise FileNotFoundError(f"train data not found: {train_path}")
+        if not os.path.exists(val_path):   raise FileNotFoundError(f"val data not found: {val_path}")
         ds_train = ChatDataset(train_path)
         ds_val = ChatDataset(val_path)
-        
-        if accelerator.is_main_process:
-            print(f"[train] SFT mode: Loaded {len(ds_train)} training samples, {len(ds_val)} validation samples")
-        data_collator = Collator(tok, template_path, max_len, model_type)
+        data_collator = CausalCollator(tok, max_len)
 
-    # backend & model load
-    backend = cfg["tuning"]["backend"]         # "bnb" | "unsloth"
-    mode    = cfg["tuning"]["mode"]            # "qlora" | "lora" | "full"
-
-    # For distributed training, we prefer BitsAndBytes for stability
-    use_bnb = True
-    if backend == "unsloth":
-        if accelerator.is_main_process:
-            print("[train] WARNING: Unsloth backend may have issues with multi-GPU training.")
-            print("[train] Automatically using BitsAndBytes for distributed training stability.")
-        use_bnb = True
-        current_backend = "bnb"
-
+    # Backend and tuning mode
+    backend = cfg["tuning"]["backend"]   # "bnb"|"unsloth"
+    mode    = cfg["tuning"]["mode"]      # "qlora"|"lora"|"full"
     is_seq2seq = (model_type == "seq2seq")
+
+    # Build model
     if is_seq2seq:
-        base_model = AutoModelForSeq2SeqLM.from_pretrained(
-            model_name, 
-            torch_dtype=torch.bfloat16 if cfg["train"].get("bf16", False) else torch.float16, 
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_name, torch_dtype=torch.bfloat16 if cfg["train"].get("bf16", True) else torch.float16,
             trust_remote_code=trust_remote_code
         )
     else:
         if mode == "qlora":
-            if use_bnb:
-                from transformers import BitsAndBytesConfig
-                bnb_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_use_double_quant=True,
-                    bnb_4bit_compute_dtype=torch.bfloat16 if cfg["train"].get("bf16", False) else torch.float16,
-                )
-                base_model = AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    quantization_config=bnb_config,
-                    torch_dtype=torch.bfloat16 if cfg["train"].get("bf16", False) else torch.float16,
-                    trust_remote_code=trust_remote_code,
-                    device_map={"": accelerator.device},  # Important for multi-GPU
-                )
-                base_model = prepare_model_for_kbit_training(base_model)
-            else:
-                # Unsloth path (not recommended for multi-GPU)
-                from unsloth import FastLanguageModel
-                base_model, tok = FastLanguageModel.from_pretrained(
-                    model_name, load_in_4bit=True,
-                    trust_remote_code=trust_remote_code
-                )
-        else:
-            # LoRA or Full: fp16/bf16 path
-            base_model = AutoModelForCausalLM.from_pretrained(
+            # prefer BitsAndBytes for distributed stability
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=torch.bfloat16 if cfg["train"].get("bf16", True) else torch.float16,
+            )
+            model = AutoModelForCausalLM.from_pretrained(
                 model_name,
-                torch_dtype=torch.bfloat16 if cfg["train"].get("bf16", False) else torch.float16,
+                quantization_config=bnb_config,
+                torch_dtype=torch.bfloat16 if cfg["train"].get("bf16", True) else torch.float16,
                 trust_remote_code=trust_remote_code,
-                device_map={"": accelerator.device},  # Important for multi-GPU
+                low_cpu_mem_usage=True,
+            )
+            model = prepare_model_for_kbit_training(model)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=torch.bfloat16 if cfg["train"].get("bf16", True) else torch.float16,
+                trust_remote_code=trust_remote_code,
+                low_cpu_mem_usage=True,
             )
 
-    # Apply LoRA if needed
+    # Resize embeddings if we added a new pad token
+    if added:
+        model.resize_token_embeddings(len(tok))
+
+    # Optional attention impl & TP tweaks
+    if hasattr(model.config, "pretraining_tp"):
+        model.config.pretraining_tp = 1
+    # Enable TF32 for speed (Ampere+)
+    try:
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.set_float32_matmul_precision("high")
+    except Exception:
+        pass
+
+    # Apply LoRA where applicable
     if mode in ["qlora", "lora"]:
         lcfg = cfg["tuning"]["lora"]
         targets = resolve_target_modules(model_name, lcfg.get("target_modules"))
         lora_cfg = LoraConfig(
             r=int(lcfg.get("r", 32)),
-            lora_alpha=int(lcfg.get("alpha", 32)),
-            lora_dropout=float(lcfg.get("dropout", 0.05)),
+            lora_alpha=int(lcfg.get("alpha", 64)),
+            lora_dropout=float(lcfg.get("dropout", 0.1)),
             target_modules=targets,
             bias="none",
             task_type="SEQ_2_SEQ_LM" if is_seq2seq else "CAUSAL_LM",
         )
-        base_model = get_peft_model(base_model, lora_cfg)
+        model = get_peft_model(model, lora_cfg)
 
-    # Training args with distributed training support
-    outdir = cfg["train"]["output_dir"]
-    import transformers
-    from transformers.trainer_utils import IntervalStrategy
+    # Disable cache when using gradient checkpointing during training
+    if bool(cfg["train"].get("gradient_checkpointing", True)) and hasattr(model, "config"):
+        model.config.use_cache = False
 
-    # Build kwargs adaptively so it works across TF versions
-    ta_fields = getattr(transformers.TrainingArguments, "__dataclass_fields__", {})
-    has_eval_strategy = "evaluation_strategy" in ta_fields
-    has_save_strategy = "save_strategy" in ta_fields
+    # Output dir & run name
+    from datetime import datetime
+    run_name = str(cfg["train"].get("run_name", f"distributed-training-{datetime.now().strftime('%Y%m%d_%H%M%S')}"))
+    outdir = f"outputs/{run_name}"
 
-    # Map string -> IntervalStrategy
-    def to_interval(name: str) -> IntervalStrategy:
-        return IntervalStrategy.STEPS if str(name).lower() == "steps" else IntervalStrategy.EPOCH
+    # Backend stamp (nice for resuming sanity)
+    if accelerator.is_main_process:
+        os.makedirs(outdir, exist_ok=True)
+        stamp = {
+            "backend": backend,
+            "dtype": "bf16" if cfg["train"].get("bf16", True) else "fp16",
+            "num_gpus": torch.cuda.device_count(),
+            "distributed": True,
+            "run_name": run_name
+        }
+        with open(os.path.join(outdir, "backend.json"), "w") as f:
+            json.dump(stamp, f, indent=2)
+        # also persist the merged config
+        with open(os.path.join(outdir, "run_config.yaml"), "w") as f:
+            yaml.safe_dump(cfg, f)
 
-    ta_kwargs = dict(
-        output_dir=outdir,
-        run_name=f"sft-play-distributed-{num_gpus}gpu",
-        logging_dir="outputs/tb",
-        per_device_train_batch_size=bs,
-        per_device_eval_batch_size=max(1, bs),
-        gradient_accumulation_steps=accum,
-        num_train_epochs=int(cfg["train"]["epochs"]),
-        learning_rate=float(cfg["train"].get("lr", 2e-4)),
-        warmup_ratio=float(cfg["train"].get("warmup_ratio", 0.06)),
-        weight_decay=float(cfg["train"].get("weight_decay", 0.01)),
-        bf16=bool(cfg["train"].get("bf16", False)),
-        fp16=bool(cfg["train"].get("fp16", False)),
-        logging_steps=1,
-        save_total_limit=int(cfg["train"].get("save_total_limit", 2)),
-        load_best_model_at_end=bool(cfg["train"].get("load_best_model_at_end", False)),
-        metric_for_best_model=cfg["train"].get("metric_for_best_model", "eval_loss"),
-        greater_is_better=bool(cfg["train"].get("greater_is_better", False)),
-        report_to=["tensorboard"],
-        remove_unused_columns=False,
-        # Distributed training specific
-        dataloader_pin_memory=False,  # Can cause issues with multi-GPU
-        gradient_checkpointing=bool(cfg["train"].get("gradient_checkpointing", True)),
-        ddp_find_unused_parameters=False,
-        ddp_broadcast_buffers=False,
-    )
-
-    # Add DeepSpeed support if requested
-    if args.deepspeed:
-        ta_kwargs["deepspeed"] = args.deepspeed_config
-
-    # Add eval/save strategies in a version-safe way
-    if cfg.get("task_mode", "sft") in ("cpt", "cpt_mixed") and ds_val is None:
-        eval_strategy_value = "no"
+    # ----------------- Autoscaling -----------------
+    bs_cfg = cfg["train"].get("batch_size", 1)
+    ga_cfg = cfg["train"].get("grad_accum", 8)
+    if bs_cfg == "auto" or ga_cfg == "auto":
+        per_device_train_batch_size, gradient_accumulation_steps = autoscale(cfg, model, max_len)
     else:
-        eval_strategy_key = "evaluation_strategy" if "evaluation_strategy" in cfg["train"] else "eval_strategy"
-        eval_strategy_value = cfg["train"].get(eval_strategy_key, "epoch")
-    
-    if has_eval_strategy:
-        ta_kwargs["evaluation_strategy"] = eval_strategy_value if eval_strategy_value == "no" else to_interval(eval_strategy_value)
+        per_device_train_batch_size = int(bs_cfg)
+        gradient_accumulation_steps = int(ga_cfg)
+
+    # Eval batch
+    per_device_eval_batch_size = cfg["train"].get("per_device_eval_batch_size", "auto")
+    if per_device_eval_batch_size == "auto":
+        per_device_eval_batch_size = max(1, per_device_train_batch_size)
     else:
-        ta_kwargs["eval_strategy"] = eval_strategy_value if eval_strategy_value == "no" else to_interval(eval_strategy_value)
+        per_device_eval_batch_size = int(per_device_eval_batch_size)
 
-    save_strategy_value = cfg["train"].get("save_strategy", "epoch")
-    if has_save_strategy:
-        ta_kwargs["save_strategy"] = to_interval(save_strategy_value)
-    else:
-        ta_kwargs["save_steps"] = int(cfg["train"].get("save_steps", 100))
+    # ----------------- TrainingArguments -----------------
+    # Fast eval defaults
+    gen_new_tokens = int(cfg["train"].get("generation_max_new_tokens", 64))
+    num_beams = int(cfg["train"].get("generation_num_beams", 1))
 
-    # Only add step args if using steps
-    if str(eval_strategy_value).lower() == "steps":
-        ta_kwargs["eval_steps"] = int(cfg["train"].get("eval_steps", 50))
+    training_args_kwargs = {
+        "output_dir": outdir,
+        "run_name": f"sft-play-distributed-{torch.cuda.device_count()}gpu",
+        "per_device_train_batch_size": per_device_train_batch_size,
+        "per_device_eval_batch_size": per_device_eval_batch_size,
+        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "num_train_epochs": float(cfg["train"].get("epochs", 1)),
+        "learning_rate": float(cfg["train"].get("learning_rate", cfg["train"].get("lr", 2e-4))),
+        "warmup_ratio": float(cfg["train"].get("warmup_ratio", 0.06)),
+        "weight_decay": float(cfg["train"].get("weight_decay", 0.01)),
+        "bf16": bool(cfg["train"].get("bf16", True)),
+        "fp16": bool(cfg["train"].get("fp16", False)),
 
-    if str(save_strategy_value).lower() == "steps":
-        ta_kwargs["save_steps"] = int(cfg["train"].get("save_steps", 100))
+        "logging_dir": f"outputs/tb/{run_name}",
+        "logging_steps": int(cfg["train"].get("logging_steps", 1)),
+        "save_total_limit": int(cfg["train"].get("save_total_limit", 5)),
+        "remove_unused_columns": False,
 
-    args_tr = transformers.TrainingArguments(**ta_kwargs)
+        # DDP-related stability & speed
+        "dataloader_pin_memory": True,
+        "dataloader_num_workers": int(cfg["train"].get("dataloader_num_workers", 4)),
+        "gradient_checkpointing": bool(cfg["train"].get("gradient_checkpointing", True)),
+        "gradient_checkpointing_kwargs": {"use_reentrant": False},
+        "ddp_find_unused_parameters": False,
+        "ddp_broadcast_buffers": False,
+        "ddp_bucket_cap_mb": int(cfg["train"].get("ddp_bucket_cap_mb", 200)),
 
-    # Resume if checkpoint present
+        # Length bucketing to cut padding waste (disabled for custom datasets)
+        "group_by_length": False,
+
+        # Eval/save strategy - handle both old and new parameter names for compatibility
+        "eval_strategy": str(cfg["train"].get("evaluation_strategy", cfg["train"].get("eval_strategy", "no"))),
+        "eval_steps": int(cfg["train"].get("eval_steps", 200)),
+        "save_strategy": str(cfg["train"].get("save_strategy", "epoch")),
+        "save_steps": int(cfg["train"].get("save_steps", 200)),
+        "load_best_model_at_end": bool(cfg["train"].get("load_best_model_at_end", False)),
+        "metric_for_best_model": str(cfg["train"].get("metric_for_best_model", "eval_loss")) if cfg["train"].get("load_best_model_at_end", False) else None,
+        "greater_is_better": bool(cfg["train"].get("greater_is_better", False)),
+
+        "eval_accumulation_steps": int(cfg["train"].get("eval_accumulation_steps", 8)),
+        "eval_do_concat_batches": False,  # lower peak RAM during eval
+
+        # Generation-based eval - conditional for compatibility
+        "predict_with_generate": bool(cfg["train"].get("predict_with_generate", True)),
+        "generation_num_beams": num_beams,
+        # prefer max_new_tokens to keep latency predictable (use smaller for step evals)
+        "generation_max_new_tokens": gen_new_tokens,
+        "eval_do_concat_batches": False,
+
+        "report_to": ["tensorboard"],
+        "save_safetensors": True,
+    }
+
+    # Build TrainingArguments with compatibility checks
+    GEN_SUPPORTED = True
+    try:
+        tr_args = TrainingArguments(**training_args_kwargs)
+    except TypeError as e:
+        # Handle compatibility issues with older Transformers versions
+        if "predict_with_generate" in str(e):
+            # Remove generation-related parameters for older versions
+            training_args_kwargs.pop("predict_with_generate", None)
+            training_args_kwargs.pop("generation_num_beams", None)
+            training_args_kwargs.pop("generation_max_new_tokens", None)
+            GEN_SUPPORTED = False
+            training_args_kwargs["prediction_loss_only"] = True
+            tr_args = TrainingArguments(**training_args_kwargs)
+            if accelerator.is_main_process:
+                print("[train] Generation params not supported. Falling back to loss-only eval.")
+        else:
+            raise e
+
+    # Optional DeepSpeed
+    ds_cfg = args.deepspeed_config or cfg["train"].get("deepspeed")
+    if args.deepspeed and not ds_cfg:
+        raise ValueError("Use --deepspeed_config or set train.deepspeed in YAML.")
+    if ds_cfg:
+        tr_args.deepspeed = ds_cfg
+
+    # Resume (if any)
     last_ckpt = get_last_checkpoint(outdir) if os.path.isdir(outdir) else None
-    if last_ckpt and accelerator.is_main_process:
+    if accelerator.is_main_process and last_ckpt:
         print(f"[train] Resuming from checkpoint: {last_ckpt}")
 
+    # Build Trainer
+    callbacks = [EvalSpeedCallback(model)] if GEN_SUPPORTED else None
     trainer = Trainer(
-        model=base_model,
-        args=args_tr,
+        model=model,
+        args=tr_args,
         train_dataset=ds_train,
-        eval_dataset=ds_val,
+        eval_dataset=ds_val if tr_args.eval_strategy != "no" else None,
         data_collator=data_collator,
         tokenizer=tok,
-        compute_metrics=compute_metrics(tok),
+        compute_metrics=compute_metrics_builder(tok) if (tr_args.eval_strategy != "no" and GEN_SUPPORTED) else None,
+        callbacks=callbacks,
     )
 
-    # Prepare for distributed training
-    trainer.model, trainer.train_dataset, trainer.eval_dataset = accelerator.prepare(
-        trainer.model, trainer.train_dataset, trainer.eval_dataset
-    )
+    # If we caught a signal, ask Trainer to stop cleanly after current step
+    if interrupted["flag"]:
+        trainer.control.should_training_stop = True
 
     trainer.train(resume_from_checkpoint=last_ckpt)
 
-    # Force one eval write so TB has eval scalars even on tiny runs (only if eval dataset exists)
-    if ds_val is not None:
-        trainer.evaluate()
-    
-    trainer.save_state()
-    if mode in ["qlora","lora"]:
-        base_model.save_pretrained("adapters/last")
-    
+    # Optional final evaluation even if strategy="no"
+    if tr_args.eval_strategy == "no" and ds_val is not None and bool(cfg["train"].get("final_eval", False)):
+        metrics = trainer.evaluate()
+        # Post-eval sync to avoid long-tail stalls
+        try:
+            torch.cuda.synchronize()
+        except Exception:
+            pass
+        try:
+            import torch.distributed as dist
+            if dist.is_available() and dist.is_initialized():
+                dist.barrier()
+        except Exception:
+            pass
+        if accelerator.is_main_process:
+            print("[eval-final]", metrics)
+
+    # Save adapters/checkpoints (rank-0 only)
+    if mode in ["qlora", "lora"] and accelerator.is_main_process:
+        os.makedirs("adapters", exist_ok=True)
+        trainer.model.save_pretrained("adapters/last")
+
+    # Graceful shutdown to avoid NCCL warning
+    try:
+        import torch.distributed as dist
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
+    except Exception:
+        pass
+
     if accelerator.is_main_process:
+        # useful summary
+        world = torch.cuda.device_count()
+        global_bsz = per_device_train_batch_size * max(1, world) * gradient_accumulation_steps
+        print(json.dumps({
+            "status": "completed",
+            "run_name": run_name,
+            "per_device_train_batch_size": per_device_train_batch_size,
+            "gradient_accumulation_steps": gradient_accumulation_steps,
+            "global_batch_size": global_bsz,
+            "eval_gen_new_tokens": gen_new_tokens,
+            "eval_num_beams": num_beams
+        }, indent=2))
         print("[train] Distributed training completed.")
 
 if __name__ == "__main__":

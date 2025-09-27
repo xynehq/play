@@ -16,8 +16,8 @@ tuning:
 
 # Mix CPT + anchor at train-time
 datasets:
-  - name: dpip_cpt
-    path: data/processed/dpip_cpt.jsonl
+  - name: cpt
+    path: data/processed/cpt.jsonl
     type: cpt
     weight: 0.9
   - name: anchor_instr

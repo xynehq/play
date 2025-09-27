@@ -1,6 +1,6 @@
 def build_messages(question, answer, cited_chunks):
     sys = (
-        "You are a STRICT and rigorous evaluator for DPIP Q&A pairs. "
+        "You are a STRICT and rigorous evaluator for Q&A pairs. "
         "Apply harsh but fair standards - most answers have significant flaws. "
         "Perfect scores (5) should be EXTREMELY rare - only for exceptional answers. "
         "Good scores (4) should be uncommon - only for genuinely strong answers. "

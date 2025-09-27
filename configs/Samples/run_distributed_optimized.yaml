@@ -1,0 +1,82 @@
+# Optimized Distributed Training Configuration
+# This config demonstrates the best practices for multi-GPU training with fast evaluation
+
+# Include base configuration
+include: "configs/config_base.yaml"
+
+# Model configuration
+model:
+  name: "Qwen/Qwen2.5-3B-Instruct"  # Replace with your model
+  max_seq_len: 2048
+  trust_remote_code: true
+
+# Data configuration
+data:
+  train_path: "data/processed/train.jsonl"
+  val_path: "data/processed/val.jsonl"
+
+# Tuning configuration
+tuning:
+  mode: "qlora"                    # Recommended for memory efficiency
+  backend: "bnb"                   # Stable for distributed training
+  lora:
+    r: 32                         # LoRA rank
+    alpha: 64                      # LoRA scaling parameter
+    dropout: 0.1                   # LoRA dropout
+    target_modules: "auto"         # Auto-detect target modules
+
+# Training configuration with evaluation optimization
+train:
+  # Core training parameters
+  epochs: 3
+  learning_rate: 2e-4
+  warmup_ratio: 0.06
+  weight_decay: 0.01
+  
+  # Batch and memory optimization (auto-calculated)
+  batch_size: "auto"               # Let system optimize per GPU
+  grad_accum: "auto"               # Let system optimize accumulation
+  target_tokens_per_device_step: 16384  # Target tokens per device step
+  
+  # Precision and optimization
+  bf16: true                      # Optimal for H200/H100
+  fp16: false                     # Disable fp16 when using bf16
+  gradient_checkpointing: true    # Essential for large models
+  
+  # Evaluation optimization (KEY FEATURES)
+  eval_strategy: "steps"          # Evaluate at step intervals
+  eval_steps: 200                 # Evaluate every 200 steps
+  predict_with_generate: true     # Try generation-based evaluation
+  generation_num_beams: 1         # Fast beam search (1 beam = greedy)
+  generation_max_new_tokens: 64   # Reasonable length for step evals
+  eval_do_concat_batches: false   # Reduce peak RAM during eval
+  eval_accumulation_steps: 8      # Accumulate eval batches
+  
+  # Saving and loading
+  save_strategy: "epoch"          # Save checkpoints each epoch
+  save_steps: 200                 # Also save every 200 steps
+  save_total_limit: 5             # Keep only last 5 checkpoints
+  load_best_model_at_end: false   # Don't load best at end (saves time)
+  
+  # Distributed training optimization
+  ddp_find_unused_parameters: false
+  ddp_broadcast_buffers: false
+  ddp_bucket_cap_mb: 200
+  dataloader_num_workers: 4
+  dataloader_pin_memory: true
+  
+  # Logging and monitoring
+  logging_steps: 1                # Log every step
+  report_to: ["tensorboard"]      # Report to TensorBoard
+  
+  # Optional: DeepSpeed configuration (uncomment to use)
+  # deepspeed: "configs/deepspeed_z2.json"
+
+# Task mode
+task_mode: "sft"                  # Standard supervised fine-tuning
+
+# Optional: Run name for tracking
+run_name: "distributed-optimized-$(date +%Y%m%d_%H%M%S)"
+
+# Optional: Final evaluation even if eval_strategy="no"
+final_eval: true
