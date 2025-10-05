@@ -91,7 +91,7 @@ We welcome contributions! Whether you're fixing bugs, adding features, or improv
 
 - **[Contributing Guide](CONTRIBUTING.md)** - Complete contribution guidelines
 - **[Good First Issues](https://github.com/your-username/xyne-llm-play/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)** - Start here
-- **[Discussions](https://github.com/your-username/xyne-llm-play/discussions)** - Community discussions
+- **[Discussions](https://github.com/xynehq/play/discussions)** - Community discussions
 
 ## License
 
