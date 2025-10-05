@@ -1,4 +1,4 @@
-# SFT-Play Changelog
+# Xyne-LLM-Play Changelog
 
 ## v2.0.0 (2025-09-13) - Universal Multi-GPU CLI
 
@@ -175,7 +175,7 @@ All changes have been thoroughly tested:
 
 ### 🎯 Impact
 
-These fixes significantly improve the reliability and user experience of SFT-Play:
+These fixes significantly improve the reliability and user experience of Xyne-LLM-Play:
 - **Developers**: Can now rely on consistent test results
 - **Users**: TensorBoard training commands work reliably
 - **CI/CD**: Test suite is more robust for automated testing

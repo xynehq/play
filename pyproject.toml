@@ -1,7 +1,7 @@
 [project]
-name = "sft-play"
-version = "0.1.0"
-description = "A plug-and-play Supervised Fine-Tuning template for small GPUs"
+name = "xyne-llm-play"
+version = "2.0.0"
+description = "Universal LLM training suite: SFT, DAPT, multi-GPU, embeddings finetuning, and RL—ready for research & production."
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
@@ -72,16 +72,16 @@ trackio = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-username/sft-play"
-Repository = "https://github.com/your-username/sft-play"
-Documentation = "https://github.com/your-username/sft-play#readme"
-"Bug Tracker" = "https://github.com/your-username/sft-play/issues"
+Homepage = "https://github.com/your-username/xyne-llm-play"
+Repository = "https://github.com/your-username/xyne-llm-play"
+Documentation = "https://github.com/your-username/xyne-llm-play#readme"
+"Bug Tracker" = "https://github.com/your-username/xyne-llm-play/issues"
 
 [project.scripts]
-sft-process = "scripts.process_data:main"
-sft-train = "scripts.train:main"
-sft-eval = "scripts.eval:main"
-sft-infer = "scripts.infer:main"
+xyne-process = "scripts.process_data:main"
+xyne-train = "scripts.train:main"
+xyne-eval = "scripts.eval:main"
+xyne-infer = "scripts.infer:main"
 
 [build-system]
 requires = ["hatchling"]
