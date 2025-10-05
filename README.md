@@ -90,7 +90,7 @@ make infer
 We welcome contributions! Whether you're fixing bugs, adding features, or improving documentation, your help is valued.
 
 - **[Contributing Guide](CONTRIBUTING.md)** - Complete contribution guidelines
-- **[Good First Issues](https://github.com/your-username/xyne-llm-play/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)** - Start here
+- **[Good First Issues](https://github.com/xynehq/play/issues)** - Start here
 - **[Discussions](https://github.com/xynehq/play/discussions)** - Community discussions
 
 ## License
