@@ -1,4 +1,4 @@
-# LLM-Workbench
+# Xyne-LLM-Play
 A universal training suite for SFT, DAPT, multi-GPU, embeddings finetuning, and RL. Batteries included (configs, eval, TensorBoard).
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
