@@ -16,7 +16,7 @@ This document provides a comprehensive overview of the complete project setup an
    - OS and IDE-specific ignores
    - Smart exceptions for essential project files
 
-2. **`LICENSE`** - MIT License for open source distribution
+2. **`LICENSE`** - Apache License 2.0 for open source distribution
 
 3. **`pyproject.toml`** - Modern Python project configuration
    - Complete dependency specification
@@ -164,7 +164,7 @@ This document provides a comprehensive overview of the complete project setup an
 ```
 sft-play/
 ├── .gitignore                    # Comprehensive ignore patterns
-├── LICENSE                       # MIT License
+├── LICENSE                       # Apache License 2.0
 ├── README.md                     # Complete documentation
 ├── pyproject.toml               # Modern Python project config
 ├── Makefile                     # Automation commands
