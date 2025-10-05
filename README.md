@@ -21,7 +21,7 @@ Xyne-LLM-Play is a universal command-line tool that makes LLM fine-tuning access
 
 ```bash
 # Clone and install
-git clone <repository-url>
+git clone https://github.com/xynehq/play
 cd play
 make install && make setup-dirs
 
@@ -84,6 +84,14 @@ make infer
 | **RTX 4060** | 8GB | Qwen2.5-1.5B, Gemma-2B | QLoRA |
 | **RTX 4090** | 24GB | Qwen2.5-14B, Llama-13B | QLoRA/LoRA |
 | **2x H200** | 282GB | Any model | DeepSpeed |
+
+## Contributing
+
+We welcome contributions! Whether you're fixing bugs, adding features, or improving documentation, your help is valued.
+
+- **[Contributing Guide](CONTRIBUTING.md)** - Complete contribution guidelines
+- **[Good First Issues](https://github.com/your-username/xyne-llm-play/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)** - Start here
+- **[Discussions](https://github.com/your-username/xyne-llm-play/discussions)** - Community discussions
 
 ## License
 
