@@ -312,7 +312,7 @@ make check                   # Validate your setup
 
 ---
 
-## 🏆 **Why Choose SFT-Play?**
+## 🏆 **Why Choose Xyne-LLM-Play?**
 
 ### **🎯 Universal**
 One tool that scales from hobbyist RTX 4060 to enterprise H200 clusters
