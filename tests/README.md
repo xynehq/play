@@ -1,6 +1,6 @@
-# SFT-Play Test Suite
+# Xyne-LLM-Play Test Suite
 
-This directory contains comprehensive tests for the SFT-Play framework, ensuring all components work correctly and reliably.
+This directory contains comprehensive tests for the Xyne-LLM-Play framework, ensuring all components work correctly and reliably.
 
 ## Test Structure
 
