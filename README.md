@@ -87,8 +87,8 @@ make train-distributed-tb CONFIG=configs/run_gemma27b_distributed.yaml
 | **RTX 4080** | 16GB | Qwen2.5-7B, Llama-7B | QLoRA/LoRA | `make train-unsloth-tb` |
 | **RTX 4090** | 24GB | Qwen2.5-14B, Llama-13B | QLoRA/LoRA | `make train-unsloth-tb` |
 | **A100 40GB** | 40GB | Gemma-27B, Qwen-32B | QLoRA/LoRA | `make train-distributed-tb` |
-| **A100 80GB** | 80GB | Llama-70B | LoRA/Full | `make train-distributed-tb` |
-| **2x H200** | 282GB | Any model | Full | `make train-deepspeed-tb` |
+| **A100 80GB** | 80GB | Llama-70B | QLoRA/LoRA | `make train-distributed-tb` |
+| **2x H200** | 282GB | Any model | QLoRA/LoRA | `make train-deepspeed-tb` |
 
 ---
 
