@@ -380,6 +380,9 @@ api_keys.txt
 *.key
 *.pem
 
+# Claude Code session data
+CLAUDE.md
+
 # Backup files
 *.bak
 *.backup
