@@ -1,0 +1,161 @@
+[project]
+name = "sft-play"
+version = "2.0.0"
+description = "Universal LLM Fine-Tuning CLI - Scale from RTX 4060 to H200 clusters"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Play Contributors"},
+]
+keywords = ["llm", "fine-tuning", "training", "qwenv", "llama", "qlora", "lora", "transformers"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.8"
+
+# Core dependencies - cross-platform compatible
+dependencies = [
+    # Core LLM training (works on Mac & Linux)
+    "torch>=2.0.0",
+    "transformers>=4.42.0",
+    "datasets>=2.14.0",
+    "accelerate>=0.27.0",
+    "peft>=0.9.0",
+
+    # Configuration and utilities
+    "PyYAML>=6.0.1",
+    "jinja2>=3.1.0",
+    "tqdm>=4.66.0",
+    "requests>=2.32.0",
+
+    # Scientific computing
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+# GPU-specific optimizations (Linux primary)
+gpu = [
+    "bitsandbytes>=0.43.0",
+]
+
+# Fast training backends
+unsloth = [
+    "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git",
+]
+
+# Multi-GPU training
+distributed = [
+    "deepspeed>=0.14.0",
+]
+
+# Domain-Adaptive Pretraining
+dapt = [
+    "python-docx>=1.1.2",
+    "pdfminer.six>=20221105",
+    "tiktoken>=0.7.0",
+]
+
+# Evaluation metrics
+evaluation = [
+    "evaluate>=0.4.0",
+    "rouge-score>=0.1.2",
+    "sacrebleu>=2.3.0",
+    "scikit-learn>=1.3.0",
+]
+
+# Monitoring and experiment tracking
+monitoring = [
+    "tensorboard>=2.14.0",
+]
+
+wandb = [
+    "wandb>=0.16.0",
+]
+
+# Advanced features
+advanced = [
+    "sentence-transformers>=3.0.0",
+    "tf-keras>=2.15.0",
+    "sacremoses>=0.1.0",
+]
+
+# Development tools
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+# Convenience bundles
+minimal = []  # Just core deps
+
+standard = [
+    "sft-play[gpu,evaluation,monitoring]",
+]
+
+full = [
+    "sft-play[gpu,unsloth,distributed,dapt,evaluation,monitoring,wandb,advanced]",
+]
+
+[project.urls]
+Homepage = "https://github.com/xynehq/sft-play"
+Repository = "https://github.com/xynehq/sft-play"
+Documentation = "https://github.com/xynehq/sft-play#readme"
+"Bug Tracker" = "https://github.com/xynehq/sft-play/issues"
+Changelog = "https://github.com/xynehq/sft-play/blob/main/CHANGELOG.md"
+
+[project.scripts]
+sft-play = "sft_play.cli:main"
+sft-train = "sft_play.train:main"
+sft-eval = "sft_play.evaluate:main"
+sft-infer = "sft_play.infer:main"
+sft-process = "sft_play.process:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sft_play"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/sft_play",
+    "/README.md",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
