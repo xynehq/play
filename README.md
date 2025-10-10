@@ -37,6 +37,7 @@ SFT-Play is a **production-ready CLI tool** that makes LLM fine-tuning accessibl
 - **SFT**: Supervised Fine-Tuning for instruction following
 - **DAPT**: Domain-Adaptive Pretraining for specialized knowledge
 - **Mixed**: Combine domain expertise with chat capabilities
+- **Embedding FT**: Advanced embedding fine-tuning with hard negative mining
 
 ### **⚡ Production-Ready CLI**
 - **One-Command Setup**: `./workflows/quick_start.sh`
@@ -115,6 +116,7 @@ make full-pipeline    # Complete data processing
 make train-bnb-tb     # BitsAndBytes + TensorBoard (stable)
 make train-unsloth-tb # Unsloth + TensorBoard (faster)
 make train            # Basic training
+make train-embed-tb   # Embedding fine-tuning + TensorBoard
 ```
 
 ### **🚀 Multi-GPU Training**
@@ -158,6 +160,10 @@ sft-play/
 │   └── infer.py              # Interactive inference
 ├── 📊 data/                  # Training data
 ├── 🔧 workflows/             # Automation scripts
+├── 🎯 embeddingFT/           # Embedding fine-tuning module
+│   ├── README.md             # Embedding FT documentation
+│   ├── configs/              # Embedding configurations
+│   └── scripts/              # Embedding training scripts
 └── 📈 outputs/               # Training results & TensorBoard logs
 ```
 
@@ -268,6 +274,7 @@ pip install tensorboard jinja2 pyyaml
 - **🚀 [MULTI_GPU_GUIDE.md](MULTI_GPU_GUIDE.md)** - Multi-GPU training guide  
 - **⚙️ [AUTOMATION_GUIDE.md](AUTOMATION_GUIDE.md)** - Advanced automation
 - **🔧 [SETUP_DOCUMENTATION.md](SETUP_DOCUMENTATION.md)** - Detailed setup
+- **🎯 [embeddingFT/README.md](embeddingFT/README.md)** - Embedding fine-tuning with hard negative mining
 
 ---
 

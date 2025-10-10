@@ -1,0 +1,22 @@
+# Embedding Fine-Tuning Configuration
+# Simple config based on the original script parameters
+
+# Dataset configuration
+dataset_name: "ayushexel/xyneft"
+sample_size: 1080
+test_size: 250
+seed: 12
+
+# Model configuration
+model_name: "google/embeddinggemma-300m"
+mining_model_name: "sentence-transformers/static-retrieval-mrl-en-v1"
+
+# Training parameters
+num_epochs: 8
+batch_size: 128
+learning_rate: 3e-5
+weight_decay: 0.01
+warmup_ratio: 0.1
+
+# Cache directory
+cache_dir: "/models"
