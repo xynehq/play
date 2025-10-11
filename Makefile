@@ -1,10 +1,13 @@
-.PHONY: help install process style render train train-with-tb stop-tb tensorboard tb tb-stop tb-clean tb-open train-and-watch eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model print-python dapt-docx dapt-train test test-unit test-integration test-coverage test-fast test-eval-optimization test-eval-core test-eval-performance test-eval-integration
+.PHONY: help install process style render train train-with-tb stop-tb tensorboard tb tb-stop tb-clean tb-open train-and-watch eval eval-test eval-val eval-quick eval-full infer infer-batch infer-interactive merge merge-bf16 merge-test check clean setup-dirs download-model print-python dapt-docx dapt-train test test-unit test-integration test-coverage test-fast test-eval-optimization test-eval-core test-eval-performance test-eval-integration train-embed train-embed-tb eval-embed infer-embed setup-embed-dirs
 
 # Python detection - use python3 if available, otherwise python
 PYTHON := $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null || echo python)
 
 # Default config file
 CONFIG ?= configs/run_bnb.yaml
+
+# Embedding config file
+EMBED_CONFIG ?= embeddingFT/configs/run_embedding_mnrl.yaml
 
 # Style prompt (can be overridden)
 STYLE ?= Answer concisely in 2 lines. No markdown. If unsure, say 'Not sure'.
@@ -55,6 +58,13 @@ help:
 	@echo "  dapt-docx     Process DOCX files for DAPT CPT datasets"
 	@echo "  dapt-train    Start DAPT training with mixed CPT + instruction data"
 	@echo ""
+	@echo "Embedding Fine-Tuning:"
+	@echo "  train-embed   Start embedding fine-tuning with MNRL"
+	@echo "  train-embed-tb Start embedding fine-tuning with TensorBoard"
+	@echo "  eval-embed    Evaluate embedding model"
+	@echo "  infer-embed   Run embedding inference"
+	@echo "  setup-embed-dirs Create embeddingFT directories"
+	@echo ""
 	@echo "GPU Monitoring & Diagnostics:"
 	@echo "  gpu-info      Show GPU information and CUDA details"
 	@echo "  memory-check  Check GPU memory usage"
@@ -83,6 +93,12 @@ help:
 	@echo "  test-fast     Run fast tests (excluding slow tests)"
 	@echo "  test-commands Test all Makefile commands"
 	@echo "  test-configs  Test configuration files"
+	@echo "  test-embedding Run embedding fine-tuning tests"
+	@echo "  test-embedding-unit Run embedding unit tests"
+	@echo "  test-embedding-integration Run embedding integration tests"
+	@echo "  test-embedding-config Run embedding configuration tests"
+	@echo "  test-embedding-error Run embedding error handling tests"
+	@echo "  test-embedding-coverage Run embedding tests with coverage"
 	@echo ""
 	@echo "Evaluation Optimization Testing:"
 	@echo "  test-eval-optimization    Run all evaluation optimization tests"
@@ -100,6 +116,7 @@ help:
 	@echo "Variables:"
 	@echo "  CONFIG=path   Specify config file (default: configs/run_bnb.yaml)"
 	@echo "  STYLE=text    Specify style prompt for style command"
+	@echo "  EMBED_CONFIG=path Specify embedding config file (default: embeddingFT/configs/run_embedding_mnrl.yaml)"
 	@echo ""
 	@echo "Multi-GPU Examples:"
 	@echo "  make train-distributed CONFIG=configs/run_bnb.yaml"
@@ -557,3 +574,86 @@ test-eval-performance:
 test-eval-coverage:
 	@echo "Running evaluation optimization tests with coverage..."
 	pytest tests/test_evaluation_optimization.py --cov=scripts.train_distributed --cov-report=html --cov-report=term-missing
+
+# Embedding Fine-Tuning Tests
+test-embedding:
+	@echo "Running embedding fine-tuning tests..."
+	pytest tests/test_embeddingFT.py -v
+
+test-embedding-unit:
+	@echo "Running embedding unit tests..."
+	pytest tests/test_embeddingFT.py::TestEmbeddingFT::test_load_config -v
+	pytest tests/test_embeddingFT.py::TestEmbeddingFT::test_setup_env -v
+	pytest tests/test_embeddingFT.py::TestEmbeddingFT::test_config_validation -v
+	pytest tests/test_embeddingFT.py::TestEmbeddingFT::test_config_types -v
+
+test-embedding-integration:
+	@echo "Running embedding integration tests..."
+	pytest tests/test_embeddingFT.py::TestEmbeddingFT::test_prepare_datasets -v
+	pytest tests/test_embeddingFT.py::TestEmbeddingFT::test_mine_negatives -v
+	pytest tests/test_embeddingFT.py::TestEmbeddingFT::test_evaluate_baseline -v
+	pytest tests/test_embeddingFT.py::TestEmbeddingFT::test_train_model_integration -v
+
+test-embedding-config:
+	@echo "Running embedding configuration tests..."
+	pytest tests/test_embeddingFT.py::TestEmbeddingFT::test_memory_optimization_config -v
+	pytest tests/test_embeddingFT.py::TestEmbeddingFT::test_different_mining_models -v
+
+test-embedding-error:
+	@echo "Running embedding error handling tests..."
+	pytest tests/test_embeddingFT.py::TestEmbeddingFT::test_load_config_file_not_found -v
+	pytest tests/test_embeddingFT.py::TestEmbeddingFT::test_error_handling_invalid_config -v
+
+test-embedding-coverage:
+	@echo "Running embedding tests with coverage..."
+	pytest tests/test_embeddingFT.py --cov=embeddingFT.scripts.train_embed --cov-report=html --cov-report=term-missing
+
+# Embedding Fine-Tuning targets
+setup-embed-dirs:
+	@echo "Creating embeddingFT directories..."
+	@mkdir -p embeddingFT/{configs,scripts,data/{raw,processed},models,checkpoints,outputs}
+	@touch embeddingFT/data/raw/.gitkeep embeddingFT/data/processed/.gitkeep embeddingFT/models/.gitkeep embeddingFT/checkpoints/.gitkeep embeddingFT/outputs/.gitkeep
+	@echo "EmbeddingFT directories created successfully!"
+
+train-embed:
+	@echo "Starting embedding fine-tuning..."
+	@if [ ! -f $(EMBED_CONFIG) ]; then \
+		echo "❌ Embedding config not found: $(EMBED_CONFIG)"; \
+		echo "   Run 'make setup-embed-dirs' first and create your config"; \
+		exit 1; \
+	fi
+	PYTHONPATH=. python embeddingFT/scripts/train_embed.py --config $(EMBED_CONFIG)
+
+train-embed-tb:
+	@echo "Starting embedding fine-tuning with TensorBoard..."
+	@mkdir -p outputs/tb
+	@echo "📈 Starting TensorBoard at http://localhost:$(TB_PORT)"
+	@nohup tensorboard --logdir $(TB_LOGDIR) --port $(TB_PORT) --host 0.0.0.0 >/dev/null 2>&1 &
+	@sleep 3
+	@echo "📈 TensorBoard should be running at http://localhost:$(TB_PORT)"
+	@if [ ! -f $(EMBED_CONFIG) ]; then \
+		echo "❌ Embedding config not found: $(EMBED_CONFIG)"; \
+		echo "   Run 'make setup-embed-dirs' first and create your config"; \
+		exit 1; \
+	fi
+	PYTHONPATH=. python embeddingFT/scripts/train_embed.py --config $(EMBED_CONFIG)
+	@echo ""
+	@echo "✅ Embedding training finished. TensorBoard may still be running at:"
+	@echo "   http://localhost:$(TB_PORT)"
+	@echo "   To stop TensorBoard: make tb-stop"
+
+eval-embed:
+	@echo "Evaluating embedding model..."
+	@if [ ! -f $(EMBED_CONFIG) ]; then \
+		echo "❌ Embedding config not found: $(EMBED_CONFIG)"; \
+		exit 1; \
+	fi
+	@echo "Embedding evaluation not yet implemented - coming soon!"
+
+infer-embed:
+	@echo "Running embedding inference..."
+	@if [ ! -f $(EMBED_CONFIG) ]; then \
+		echo "❌ Embedding config not found: $(EMBED_CONFIG)"; \
+		exit 1; \
+	fi
+	@echo "Embedding inference not yet implemented - coming soon!"
