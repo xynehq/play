@@ -1,12 +1,12 @@
-# SFT-Play Automation Guide
+# Xyne-Play Automation Guide
 
-This guide explains the automation system I created for SFT-Play, what each file does, and how to use them.
+This guide explains the automation system created for Xyne-Play, what each file does, and how to use them.
 
 ## 🤖 Automation Files Created
 
 ### 1. `Makefile` - Command Automation Hub
 
-**What it does:** Provides simple commands to automate the entire SFT workflow with backend-specific optimizations.
+**What it does:** Provides simple commands to automate the entire fine-tuning workflow with backend-specific optimizations.
 
 **Key commands:**
 ```bash
@@ -355,4 +355,4 @@ make style STYLE="Your custom instruction"
 make train
 ```
 
-This automation system transforms SFT-Play from a collection of manual scripts into a streamlined, user-friendly toolkit that works for both beginners and advanced users.
+This automation system transforms Xyne-Play from a collection of manual scripts into a streamlined, user-friendly toolkit that works for both beginners and advanced users.

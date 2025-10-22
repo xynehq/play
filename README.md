@@ -25,8 +25,8 @@ Xyne-Play is a production-ready CLI tool that makes LLM fine-tuning accessible t
 
 ### Quick Install
 ```bash
-git clone <repository-url>
-cd xyne-play
+git clone https://github.com/xynehq/play
+cd play
 make install && make setup-dirs
 ```
 
@@ -51,16 +51,6 @@ make train-bnb-tb
 # Chat with your model
 make infer
 ```
-
-### Python API
-```python
-from xyne_play import XyneTrainer
-
-trainer = XyneTrainer(config="configs/run_bnb.yaml")
-trainer.train()
-```
-
----
 
 ## 🎯 Example 1: Fine-Tuning LLM
 

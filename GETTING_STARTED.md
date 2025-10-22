@@ -1,17 +1,19 @@
-# Getting Started with SFT-Play: Complete Beginner's Guide
+# Getting Started with Xyne-Play: Complete Beginner's Guide
 
-Welcome to SFT-Play! This guide will walk you through everything you need to know to start fine-tuning language models, from small 1.5B models on consumer GPUs to massive 70B+ models on enterprise hardware.
+Welcome to Xyne-Play! This guide will walk you through everything you need to know to start fine-tuning language models, from small 1.5B models on consumer GPUs to massive 70B+ models on enterprise hardware.
 
-## 🤔 **What is SFT-Play?**
+## 🤔 **What is Xyne-Play?**
 
-SFT-Play is a **command-line tool** for fine-tuning large language models. Think of it as your Swiss Army knife for AI model training:
+Xyne-Play is a **universal command-line tool** for fine-tuning large language models. Think of it as your Swiss Army knife for AI model training:
 
 - **Supervised Fine-Tuning (SFT)**: Train models to follow instructions better
 - **Domain-Adaptive Pretraining (DAPT)**: Teach models about specific domains (medical, legal, etc.)
+- **Continual Pretraining (CPT)**: Pretrain on domain documents before instruction fine-tuning
+- **Mixed Training**: Combine domain knowledge with instruction following
 - **Multi-GPU Training**: Scale from 1 GPU to multiple GPUs seamlessly
 - **Memory Efficient**: Train large models on smaller hardware using smart techniques
 
-## 🎯 **Who Should Use SFT-Play?**
+## 🎯 **Who Should Use Xyne-Play?**
 
 ### **Complete Beginners**
 - Never trained an AI model before
@@ -210,7 +212,7 @@ make help           # See all commands
 ## 🔧 **Configuration Files Explained**
 
 ### **What are Config Files?**
-Configuration files tell SFT-Play how to train your model. Think of them as recipes:
+Configuration files tell Xyne-Play how to train your model. Think of them as recipes:
 
 ```yaml
 # configs/my_config.yaml
@@ -455,7 +457,7 @@ make help
 ## 🎉 **You're Ready!**
 
 Congratulations! You now understand:
-- What SFT-Play is and what it can do
+- What Xyne-Play is and what it can do
 - How to match your hardware to the right models
 - How to prepare data and start training
 - How to monitor and troubleshoot training

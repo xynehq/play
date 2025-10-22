@@ -5,8 +5,9 @@ Welcome to the comprehensive documentation for Xyne-Play, the universal LLM fine
 ## 📚 Documentation Structure
 
 ### 🎯 Task-Specific Guides
-- **[LLM Fine-Tuning](tasks/llm-fine-tuning.md)** - Instruction following and chat model training
-- **[DAPT/CPT](tasks/dapt-cpt.md)** - Domain-adaptive pretraining and continual pretraining
+- **[Supervised Fine-Tuning (SFT)](tasks/supervised-fine-tuning.md)** - Instruction following and chat model training
+- **[Domain-Adaptive Pretraining (DAPT/CPT)](tasks/dapt-cpt.md)** - Domain-specific knowledge training
+- **[Mixed Training](tasks/mixed-training.md)** - Combine domain knowledge with instruction following
 - **[Embedding Fine-Tuning](tasks/embedding-fine-tuning.md)** - Semantic embedding training with contrastive learning
 
 ### 🚀 Advanced Guides
@@ -23,16 +24,19 @@ Welcome to the comprehensive documentation for Xyne-Play, the universal LLM fine
 
 ### New to Xyne-Play?
 1. Read the [main README](../README.md) for installation and quick start
-2. Follow the [LLM Fine-Tuning guide](tasks/llm-fine-tuning.md) for your first model
+2. Follow the [Supervised Fine-Tuning guide](tasks/supervised-fine-tuning.md) for your first model
 3. Explore other task guides as needed
 
 ### Choose Your Task
 
 #### I want to train a chat assistant
-→ **[LLM Fine-Tuning](tasks/llm-fine-tuning.md)**
+→ **[Supervised Fine-Tuning (SFT)](tasks/supervised-fine-tuning.md)**
 
 #### I want to create a domain expert model
-→ **[DAPT/CPT](tasks/dapt-cpt.md)**
+→ **[Domain-Adaptive Pretraining (DAPT/CPT)](tasks/dapt-cpt.md)**
+
+#### I want to combine domain knowledge with chat capabilities
+→ **[Mixed Training](tasks/mixed-training.md)**
 
 #### I want to improve semantic search
 → **[Embedding Fine-Tuning](tasks/embedding-fine-tuning.md)**
@@ -77,7 +81,7 @@ make tensorboard     # View training logs
 
 ### Beginner Path
 1. **Installation**: `make install && make setup-dirs`
-2. **First Model**: Follow [LLM Fine-Tuning](tasks/llm-fine-tuning.md) with toy dataset
+2. **First Model**: Follow [Supervised Fine-Tuning](tasks/supervised-fine-tuning.md) with toy dataset
 3. **Evaluation**: `make eval` and `make infer`
 4. **Monitoring**: `make tensorboard`
 

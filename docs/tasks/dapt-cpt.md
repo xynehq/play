@@ -7,8 +7,8 @@
 ### When to Use DAPT/CPT
 - **Domain Expert Models**: Medical, legal, financial, scientific models
 - **Specialized Knowledge**: Technical documentation, research papers
-- **Mixed Training**: Combine domain knowledge with chat capabilities
 - **Knowledge Base**: Train on company internal documents
+- **Foundation for SFT**: Pre-train on domain before instruction fine-tuning
 
 ## 📊 Expected Dataset Format
 
@@ -334,7 +334,8 @@ python scripts/filter_documents.py \
 
 ## 📚 Related Documentation
 
-- [LLM Fine-Tuning](llm-fine-tuning.md) - Basic instruction fine-tuning
+- [Supervised Fine-Tuning](supervised-fine-tuning.md) - Pure instruction following
+- [Mixed Training](mixed-training.md) - Combine domain knowledge with SFT
 - [Embedding Fine-Tuning](embedding-fine-tuning.md) - Semantic embedding training
 - [Configuration Reference](../configs/) - All configuration options
 - [Advanced Configuration](../advanced/custom-configs.md) - Custom configuration patterns

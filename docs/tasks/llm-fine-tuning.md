@@ -4,6 +4,8 @@
 
 LLM Fine-Tuning adapts pre-trained language models to specific tasks or domains by training them on custom datasets. This improves model performance for your specific use case while retaining the model's general capabilities.
 
+**Note**: This guide covers general fine-tuning concepts. For specific instruction following, see [Supervised Fine-Tuning (SFT)](supervised-fine-tuning.md). For domain-specific knowledge training, see [Domain-Adaptive Pretraining (DAPT/CPT)](dapt-cpt.md).
+
 ## 📊 Expected Dataset Format
 
 ### Format 1: Chat Format (Recommended)
