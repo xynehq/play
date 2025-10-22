@@ -17,7 +17,7 @@ TB_PORT ?= 6006
 TB_LOGDIR ?= $(shell mkdir -p outputs/tb && realpath outputs/tb)
 
 help:
-	@echo "SFT-Play Makefile Commands:"
+	@echo "Xyne-Play Makefile Commands:"
 	@echo ""
 	@echo "Setup:"
 	@echo "  install       Install dependencies (pip or uv)"
@@ -358,8 +358,8 @@ merge-test:
 		print('✓ Merged model is ready for deployment!')"
 
 check:
-	@echo "🔍 SFT-Play Sanity Check"
-	@echo "========================"
+	@echo "🔍 Xyne-Play Sanity Check"
+	@echo "======================="
 	@echo ""
 	@echo "Checking project setup..."
 	@echo ""
