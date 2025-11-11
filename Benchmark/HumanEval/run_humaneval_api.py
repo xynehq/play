@@ -17,7 +17,7 @@ import requests
 from tqdm import tqdm
 
 # API Configuration
-API_KEY = 'sk-67cI50BNxSw7SsYSkQGvGw'
+API_KEY = ''
 BASE_URL = 'https://grid.ai.juspay.net'
 
 # Model Configuration  
