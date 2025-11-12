@@ -1,0 +1,650 @@
+#!/usr/bin/env python3
+"""
+polyglot
+
+One-step Aider Polyglot Benchmark setup + evaluation script.
+
+✅ Features:
+- Checks Docker installation and status
+- Sets up Aider repository and polyglot benchmark exercises
+- Builds Docker container for safe evaluation
+- Runs benchmark with configurable models and settings
+- Generates comprehensive reports
+- Handles cleanup and error recovery
+"""
+
+import os
+import platform
+import subprocess
+import sys
+import json
+import datetime
+from pathlib import Path
+import shutil
+
+# -----------------------------------------------------------------------------
+# PREREQUISITES CHECK - Run before anything else
+# -----------------------------------------------------------------------------
+def check_prerequisites():
+    """
+    Check Docker installation and running status.
+    All other requirements are handled automatically by the script.
+    """
+    print("="*80)
+    print("🔍 CHECKING DOCKER (Required for Safe Evaluation)")
+    print("="*80)
+    
+    system = platform.system()
+    docker_installed = False
+    docker_running = False
+    
+    print(f"\n📍 Operating System: {system} {platform.release()}")
+    
+    # Check Docker Installation and Status
+    print("\n🐳 Docker Check:")
+    
+    try:
+        # Check if docker command exists
+        result = subprocess.run(
+            ["docker", "--version"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        docker_version = result.stdout.strip()
+        print(f"   ✅ Docker installed: {docker_version}")
+        docker_installed = True
+        
+        # Check if Docker daemon is running
+        try:
+            subprocess.run(
+                ["docker", "info"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+                timeout=5
+            )
+            print("   ✅ Docker daemon is running")
+            docker_running = True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            print("   ⚠️  Docker is installed but NOT running")
+            
+    except FileNotFoundError:
+        print("   ❌ Docker is NOT installed")
+    except subprocess.CalledProcessError:
+        print("   ❌ Docker command failed")
+    
+    # Print Summary
+    print("\n" + "="*80)
+    
+    if docker_installed and docker_running:
+        print("✅ DOCKER CHECK PASSED")
+        print("="*80)
+        print("🚀 Proceeding with setup...")
+        print("="*80)
+        return True
+    
+    # Docker not installed or not running
+    if not docker_installed:
+        print("❌ DOCKER NOT INSTALLED")
+        print("="*80)
+        print("\n🐳 DOCKER INSTALLATION REQUIRED")
+        print("="*80)
+        
+        if system == "Darwin":
+            print("\n📦 macOS Installation Options:\n")
+            print("Option 1: OrbStack (Recommended - Lightweight)")
+            print("   1. Visit: https://orbstack.dev")
+            print("   2. Download and install")
+            print("   3. Open OrbStack from Applications")
+            print("   4. Verify: docker info\n")
+            
+            print("Option 2: Docker Desktop")
+            print("   1. Visit: https://www.docker.com/products/docker-desktop")
+            print("   2. Download Docker Desktop for Mac")
+            if platform.machine() == "arm64":
+                print("      → Choose 'Apple Silicon' version")
+            else:
+                print("      → Choose 'Intel Chip' version")
+            print("   3. Install and launch Docker Desktop")
+            print("   4. Verify: docker info\n")
+            
+            print("Option 3: Homebrew")
+            print("   brew install --cask orbstack")
+            print("   # OR")
+            print("   brew install --cask docker\n")
+            
+        elif system == "Linux":
+            print("\n📦 Linux Installation:\n")
+            try:
+                with open("/etc/os-release") as f:
+                    os_info = f.read().lower()
+                
+                if "ubuntu" in os_info or "debian" in os_info:
+                    print("Ubuntu/Debian:")
+                    print("   sudo apt update")
+                    print("   sudo apt install -y docker.io")
+                    print("   sudo systemctl start docker")
+                    print("   sudo systemctl enable docker")
+                    print("   sudo usermod -aG docker $USER")
+                    print("   # Log out and back in\n")
+                elif "fedora" in os_info or "rhel" in os_info:
+                    print("Fedora/RHEL/CentOS:")
+                    print("   sudo dnf install -y docker")
+                    print("   sudo systemctl start docker")
+                    print("   sudo systemctl enable docker")
+                    print("   sudo usermod -aG docker $USER\n")
+                else:
+                    print("Visit: https://docs.docker.com/engine/install/\n")
+            except:
+                print("Visit: https://docs.docker.com/engine/install/\n")
+        
+        print("\n" + "="*80)
+        print("❌ Please install Docker and re-run the script.")
+        print("="*80)
+        sys.exit(1)
+    
+    elif not docker_running:
+        print("⚠️  DOCKER IS NOT RUNNING")
+        print("="*80)
+        print("\nDocker is required for safe evaluation. Please start Docker:\n")
+        if system == "Darwin":
+            print("   → Open Docker Desktop or OrbStack from Applications")
+            print("   → Wait for the status icon to show 'Docker is running'")
+        elif system == "Linux":
+            print("   → sudo systemctl start docker")
+        print("\nThen re-run this script.")
+        print("="*80)
+        
+        response = input("\nContinue anyway? (Benchmark will run but without Docker isolation) [y/N]: ").strip().lower()
+        if response != 'y':
+            sys.exit(0)
+        
+        print("\n" + "="*80)
+        print("⚠️  Proceeding without Docker... (reduced safety)")
+        print("="*80)
+    
+    return True
+
+# Run prerequisites check immediately
+check_prerequisites()
+
+# -----------------------------------------------------------------------------
+# Helper functions
+# -----------------------------------------------------------------------------
+def run(cmd, cwd=None, check=True, env=None, capture_output=False):
+    """Execute command with optional output capture"""
+    print(f"🔹 {' '.join(cmd)}")
+    result = subprocess.run(cmd, cwd=cwd, check=check, env=env, 
+                          capture_output=capture_output, text=True if capture_output else None)
+    return result
+
+def check_git():
+    """Check if git is available"""
+    try:
+        subprocess.run(["git", "--version"], capture_output=True, check=True)
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        print("❌ Git is not installed. Please install git first.")
+        return False
+
+def check_python():
+    """Check Python version and return executable path"""
+    major, minor = sys.version_info[:2]
+    print(f"🐍 Python version: {major}.{minor}")
+    
+    if major == 3 and minor >= 8:
+        print("✅ Python version is compatible")
+        return sys.executable
+    else:
+        print(f"❌ Python {major}.{minor} is not supported. Please use Python 3.8+")
+        sys.exit(1)
+
+def log_step(step_name, status="START"):
+    """Log step progress"""
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\n{'='*60}")
+    print(f"[{timestamp}] {status}: {step_name}")
+    print(f"{'='*60}")
+
+# -----------------------------------------------------------------------------
+# Step 1: Environment Setup
+# -----------------------------------------------------------------------------
+log_step("Aider Polyglot Benchmark Setup")
+
+print("🔍 Checking system requirements...")
+python_exe = check_python()
+if not check_git():
+    sys.exit(1)
+
+# -----------------------------------------------------------------------------
+# Step 2: Clone Aider Repository
+# -----------------------------------------------------------------------------
+log_step("Repository Setup")
+
+aider_repo_url = "https://github.com/Aider-AI/aider.git"
+aider_dir = Path("aider")
+
+if not aider_dir.exists():
+    print("📥 Cloning Aider repository...")
+    run(["git", "clone", aider_repo_url])
+else:
+    print("✅ Aider repository already exists")
+    print("🔄 Updating repository...")
+    run(["git", "pull"], cwd=str(aider_dir))
+
+# Create benchmarks directory
+benchmarks_dir = aider_dir / "tmp.benchmarks"
+benchmarks_dir.mkdir(exist_ok=True)
+print(f"📁 Created benchmarks directory: {benchmarks_dir}")
+
+# Clone polyglot benchmark repo
+polyglot_repo_url = "https://github.com/Aider-AI/polyglot-benchmark"
+polyglot_dir = benchmarks_dir / "polyglot-benchmark"
+
+if not polyglot_dir.exists():
+    print("📥 Cloning polyglot benchmark repository...")
+    run(["git", "clone", polyglot_repo_url, str(polyglot_dir)])
+else:
+    print("✅ Polyglot benchmark already exists")
+    # Check if it's a valid git repository before trying to pull
+    git_dir = polyglot_dir / ".git"
+    if git_dir.exists():
+        print("🔄 Updating repository...")
+        try:
+            run(["git", "pull"], cwd=str(polyglot_dir))
+        except subprocess.CalledProcessError:
+            print("⚠️  Git pull failed, repository may be corrupted")
+            print("🔄 Re-cloning repository...")
+            import shutil
+            shutil.rmtree(polyglot_dir)
+            run(["git", "clone", polyglot_repo_url, str(polyglot_dir)])
+    else:
+        print("⚠️  Directory exists but is not a git repository")
+        print("🔄 Re-cloning repository...")
+        import shutil
+        shutil.rmtree(polyglot_dir)
+        run(["git", "clone", polyglot_repo_url, str(polyglot_dir)])
+
+# -----------------------------------------------------------------------------
+# Step 3: Docker Container Setup
+# -----------------------------------------------------------------------------
+log_step("Docker Container Setup")
+
+# Check if Docker image already exists
+print("🔍 Checking for existing Docker image...")
+try:
+    result = run(["docker", "images", "-q", "aider-benchmark"], capture_output=True)
+    if result.stdout.strip():
+        print("✅ Docker image 'aider-benchmark' already exists")
+        print("   Skipping build step...")
+    else:
+        print("🔨 Docker image not found, building now...")
+        
+        docker_build_script = aider_dir / "benchmark" / "docker_build.sh"
+        if docker_build_script.exists():
+            print("⚠️  This may take several minutes on first run...")
+            run(["chmod", "+x", str(docker_build_script)])
+            
+            # Try to build with the original script first
+            try:
+                run(["./benchmark/docker_build.sh"], cwd=str(aider_dir))
+                print("✅ Docker container built successfully")
+            except subprocess.CalledProcessError as e:
+                print("⚠️  Standard Docker build failed, trying alternative approach...")
+                print("   This is likely due to setuptools-scm version detection issues")
+                
+                # Alternative: Build Docker container with environment variable to bypass version detection
+                print("🔨 Building Docker container with version override...")
+                env = os.environ.copy()
+                env["SETUPTOOLS_SCM_PRETEND_VERSION"] = "0.86.2.dev"
+                
+                # Use docker build directly with environment variable
+                docker_build_cmd = [
+                    "docker", "build",
+                    "--file", "benchmark/Dockerfile",
+                    "--build-arg", "SETUPTOOLS_SCM_PRETEND_VERSION=0.86.2.dev",
+                    "-t", "aider-benchmark",
+                    "."
+                ]
+                
+                try:
+                    run(docker_build_cmd, cwd=str(aider_dir), env=env)
+                    print("✅ Docker container built successfully with version override")
+                except subprocess.CalledProcessError:
+                    print("❌ Docker build failed even with version override")
+                    print("   Continuing without Docker container build...")
+                    print("   The benchmark will attempt to run but may fail")
+        else:
+            print("❌ Docker build script not found at benchmark/docker_build.sh")
+            print("   Please ensure you're in the correct directory")
+            sys.exit(1)
+except subprocess.CalledProcessError:
+    print("❌ Failed to check for existing Docker images")
+    print("   Proceeding with build attempt...")
+
+# -----------------------------------------------------------------------------
+# Step 4: Configuration Setup
+# -----------------------------------------------------------------------------
+log_step("Configuration Setup")
+
+# Default configuration
+config = {
+    "edit_format": "whole",
+    "threads": 10,
+    "tries": 2,
+    "exercises_dir": "polyglot-benchmark"
+}
+
+# Interactive configuration
+print("⚙️  Benchmark Configuration")
+print("=" * 40)
+
+# Model selection - ask user for custom model
+print("\n🤖 Model Configuration:")
+print("Enter the model name you want to benchmark.")
+print("Examples: gpt-4, gpt-3.5-turbo, claude-3.5-sonnet, etc.")
+config["model"] = input("Model name: ").strip()
+
+if not config["model"]:
+    print("❌ Model name is required!")
+    sys.exit(1)
+
+# API Configuration
+print("\n🔑 API Configuration:")
+print("For the benchmark to work, you need to provide API credentials.")
+
+# Get API base URL (optional for standard OpenAI)
+api_base = input("Enter your API base URL (leave empty for standard OpenAI, e.g., https://api.your-provider.com/v1): ").strip()
+
+# Get API key
+api_key = input("Enter your API key: ").strip()
+if not api_key:
+    print("❌ API key is required!")
+    sys.exit(1)
+
+if api_base:
+    # Custom API endpoint
+    config["api_base"] = api_base
+    config["api_key"] = api_key
+    
+    print(f"✅ Custom API configured:")
+    print(f"   • Base URL: {api_base}")
+    print(f"   • Model: {config['model']}")
+    print(f"   • API Key: {'*' * (len(api_key) - 4) + api_key[-4:] if len(api_key) > 4 else '****'}")
+else:
+    # Standard providers
+    print("\n🔑 Standard API Setup:")
+    
+    # Detect provider based on model name
+    if "gpt" in config["model"].lower() or "openai" in config["model"].lower():
+        provider = "OpenAI"
+        env_var = "OPENAI_API_KEY"
+    elif "claude" in config["model"].lower() or "anthropic" in config["model"].lower():
+        provider = "Anthropic"
+        env_var = "ANTHROPIC_API_KEY"
+    elif "gemini" in config["model"].lower() or "google" in config["model"].lower():
+        provider = "Google"
+        env_var = "GOOGLE_API_KEY"
+    else:
+        provider = "OpenAI (default)"
+        env_var = "OPENAI_API_KEY"
+    
+    config["api_key"] = api_key
+    config["env_var"] = env_var
+    
+    print(f"✅ API key configured for {provider}")
+    print(f"   • Key: {'*' * (len(api_key) - 4) + api_key[-4:] if len(api_key) > 4 else '****'}")
+
+# Edit format selection
+print("\n✏️  Edit Format:")
+print("1. whole (default - replace entire file)")
+print("2. diff (generate diffs)")
+print("3. udiff (unified diffs)")
+
+edit_choice = input("Choose edit format (1-3, default: 1): ").strip() or "1"
+if edit_choice == "2":
+    config["edit_format"] = "diff"
+elif edit_choice == "3":
+    config["edit_format"] = "udiff"
+
+# Thread configuration
+threads_input = input(f"Number of parallel threads (default: {config['threads']}): ").strip()
+if threads_input:
+    config["threads"] = int(threads_input)
+
+# Number of tests
+num_tests = input("Number of tests to run (default: all): ").strip()
+if num_tests:
+    config["num_tests"] = int(num_tests)
+
+# Language selection
+print("\n🌐 Language Selection:")
+print("Choose which programming language to test:")
+print("1. All languages (default)")
+print("2. C++")
+print("3. Go")
+print("4. Java")
+print("5. JavaScript")
+print("6. Python")
+print("7. Rust")
+
+language_choice = input("Choose option (1-7, default: 1): ").strip() or "1"
+
+# Map language choices to directory names
+language_map = {
+    "2": "cpp",
+    "3": "go", 
+    "4": "java",
+    "5": "javascript",
+    "6": "python",
+    "7": "rust",
+}
+
+if language_choice in language_map:
+    selected_lang = language_map[language_choice]
+    config["keywords"] = selected_lang
+    print(f"✅ Selected language: {selected_lang}")
+else:
+    print("✅ Using all languages")
+
+# Additional keywords filter
+additional_keywords = input("Additional keyword filter (optional): ").strip()
+if additional_keywords:
+    if "keywords" in config:
+        config["keywords"] = f"{config['keywords']}.*{additional_keywords}"
+    else:
+        config["keywords"] = additional_keywords
+
+# Model settings file
+model_settings = input("Path to model settings YAML file (optional): ").strip()
+if model_settings and Path(model_settings).exists():
+    config["model_settings"] = model_settings
+
+print(f"\n✅ Configuration:")
+for key, value in config.items():
+    print(f"   {key}: {value}")
+
+# -----------------------------------------------------------------------------
+# Step 5: Run Benchmark
+# -----------------------------------------------------------------------------
+log_step("Running Benchmark")
+
+# Generate run name
+timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+run_name = f"{timestamp}--{config['model'].replace('/', '-')}-{config['edit_format']}"
+
+print(f"🚀 Starting benchmark: {run_name}")
+print(f"🤖 Model: {config['model']}")
+print(f"✏️  Edit format: {config['edit_format']}")
+print(f"🧵 Threads: {config['threads']}")
+
+# Prepare benchmark command to run inside Docker
+benchmark_cmd_parts = [
+    "pip install -e .[dev] &&",
+    "./benchmark/benchmark.py",
+    run_name,
+    "--model", config["model"],
+    "--edit-format", config["edit_format"],
+    "--threads", str(config["threads"]),
+    "--tries", str(config["tries"]),
+    "--exercises-dir", config["exercises_dir"]
+]
+
+# Add optional parameters
+if "num_tests" in config:
+    benchmark_cmd_parts.extend(["--num-tests", str(config["num_tests"])])
+
+if "keywords" in config:
+    benchmark_cmd_parts.extend(["--keywords", config["keywords"]])
+
+if "model_settings" in config:
+    benchmark_cmd_parts.extend(["--read-model-settings", config["model_settings"]])
+
+# Join command parts
+docker_benchmark_cmd = " ".join(benchmark_cmd_parts)
+
+# For OpenAI-compatible APIs, we need to format the model name properly for litellm
+if "api_base" in config:
+    model_name = config['model']
+    if '/' not in model_name and not model_name.startswith(('gpt-', 'text-', 'davinci', 'curie', 'babbage', 'ada')):
+        # This looks like a custom model, let's try with openai/ prefix for litellm
+        print(f"🔧 Custom model detected, using openai/{model_name} format for litellm")
+        # Update the benchmark command to use the prefixed model name
+        docker_benchmark_cmd = docker_benchmark_cmd.replace(f"--model {model_name}", f"--model openai/{model_name}")
+
+print(f"📊 Docker command: {docker_benchmark_cmd}")
+
+# Check if Docker script exists
+docker_script = aider_dir / "benchmark" / "docker.sh"
+if not docker_script.exists():
+    print("❌ Docker script not found at benchmark/docker.sh")
+    sys.exit(1)
+
+print("🐳 Launching Docker container and running benchmark...")
+print("⏳ This may take a while depending on the number of tests...")
+run(["chmod", "+x", str(docker_script)])
+
+# Instead of using docker.sh directly, we'll run docker with the same parameters
+# but execute our command directly instead of launching interactive bash
+print(f"🔹 Running Docker container with command: {docker_benchmark_cmd}")
+docker_run_cmd = [
+    "docker", "run",
+    "--rm",
+    "--memory=12g",
+    "--memory-swap=12g",
+    "--add-host=host.docker.internal:host-gateway",
+    "-v", f"{aider_dir.absolute()}:/aider",
+    "-v", f"{aider_dir.absolute()}/tmp.benchmarks/.:/benchmarks",
+    "-e", "AIDER_DOCKER=1",
+    "-e", "AIDER_BENCHMARK_DIR=/benchmarks",
+    "-w", "/aider",
+]
+
+# Add API credentials to Docker environment
+if "api_base" in config:
+    # OpenAI-compatible API
+    docker_run_cmd.extend(["-e", f"OPENAI_API_KEY={config['api_key']}"])
+    docker_run_cmd.extend(["-e", f"OPENAI_API_BASE={config['api_base']}"])
+    print(f"🔑 Using OpenAI-compatible API: {config['api_base']}")
+else:
+    # Standard provider
+    if "env_var" in config:
+        docker_run_cmd.extend(["-e", f"{config['env_var']}={config['api_key']}"])
+        print(f"🔑 Using {config.get('env_var', 'API_KEY')}")
+    else:
+        # Fallback to OPENAI_API_KEY
+        docker_run_cmd.extend(["-e", f"OPENAI_API_KEY={config['api_key']}"])
+
+# Add the container image and command
+docker_run_cmd.extend([
+    "aider-benchmark",
+    "bash", "-c", docker_benchmark_cmd
+])
+
+# Add any additional environment variables that might be needed from system
+for env_var in ["ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "AZURE_OPENAI_API_KEY", "COHERE_API_KEY"]:
+    if env_var in os.environ and env_var != config.get('env_var'):
+        docker_run_cmd.extend(["-e", f"{env_var}={os.environ[env_var]}"])
+
+run(docker_run_cmd, cwd=str(aider_dir))
+
+# -----------------------------------------------------------------------------
+# Step 6: Generate Report
+# -----------------------------------------------------------------------------
+log_step("Generating Report")
+
+# Find the results directory
+results_pattern = f"tmp.benchmarks/*{run_name}*"
+results_dirs = list(aider_dir.glob(results_pattern))
+
+if results_dirs:
+    results_dir = results_dirs[0]
+    print(f"📊 Found results in: {results_dir}")
+    
+    # The benchmark already generates stats during execution, so we just need to read them
+    # Try to read and display the stats
+    try:
+        # Look for YAML stats file
+        stats_files = list(results_dir.glob("*.yaml"))
+        if not stats_files:
+            stats_files = list(results_dir.glob("*.yml"))
+        
+        if stats_files:
+            stats_file = stats_files[0]
+            with open(stats_file, 'r') as f:
+                stats_content = f.read()
+                print(f"\n📈 Benchmark Results Summary:")
+                print("=" * 50)
+                print(stats_content)
+                print("=" * 50)
+        else:
+            print("📊 Stats file not found, checking results directory...")
+            # List files in results directory
+            result_files = list(results_dir.glob("*"))
+            print(f"   Files found: {[f.name for f in result_files]}")
+            
+            # Check if benchmark completed successfully
+            json_files = list(results_dir.glob("*/.aider.results.json"))
+            if json_files:
+                print(f"   Found {len(json_files)} test result files")
+                # Read a sample result to show status
+                try:
+                    with open(json_files[0], 'r') as f:
+                        sample_result = json.load(f)
+                        print(f"   Sample result: {sample_result.get('testcase', 'unknown')} - "
+                              f"Pass rate: {sum(sample_result.get('tests_outcomes', [])) / len(sample_result.get('tests_outcomes', [1])) * 100:.1f}%")
+                except Exception as e:
+                    print(f"   Could not read sample result: {e}")
+    except Exception as e:
+        print(f"⚠️  Could not read stats: {e}")
+else:
+    print("⚠️  No results directory found")
+
+# -----------------------------------------------------------------------------
+# Step 7: Summary
+# -----------------------------------------------------------------------------
+log_step("Benchmark Complete", "FINISH")
+
+print("🎉 Aider Polyglot Benchmark completed successfully!")
+print("\n📊 Summary:")
+print(f"   • Run name: {run_name}")
+print(f"   • Model: {config['model']}")
+print(f"   • Edit format: {config['edit_format']}")
+print(f"   • Threads: {config['threads']}")
+
+if results_dirs:
+    results_dir = results_dirs[0]
+    print(f"   • Results: {results_dir}")
+
+print(f"\n🔍 View detailed results:")
+print(f"   • Results directory: {results_dirs[0] if results_dirs else 'Not found'}")
+print(f"   • Run stats command: ./benchmark/benchmark.py --stats {results_dirs[0] if results_dirs else 'RESULTS_DIR'}")
+
+print(f"\n💡 Next steps:")
+print(f"   • Review results in the results directory")
+print(f"   • Compare with other model benchmarks")
+print(f"   • Run again with different models or settings")
+print(f"   • Submit results to Aider leaderboard if desired")
+
+print(f"\n✅ Benchmark run '{run_name}' completed!")
