@@ -1,4 +1,19 @@
 #!/usr/bin/env python3
+"""
+setup_swebench.py
+
+One-step SWE-bench setup + evaluation script.
+
+✅ Features:
+- Installs Python 3.10+ (if needed)
+- Sets up venv and dependencies
+- Clones SWE-bench repo
+- Detects CPU/GPU/macOS
+- Handles FlashAttention setup (only if supported)
+- Loads dataset directly from Hugging Face
+- Runs evaluation with local model or API-based model
+- Skips rebuilds if images already exist
+"""
 
 import os
 import platform
