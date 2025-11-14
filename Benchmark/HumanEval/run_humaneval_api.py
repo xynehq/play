@@ -12,17 +12,190 @@ import time
 from datetime import datetime
 from pathlib import Path
 from human_eval.data import read_problems, write_jsonl, stream_jsonl
-from human_eval.evaluation import evaluate_functional_correctness, evaluate_rust_correctness, check_rust_correctness, clean_rust_completion
+from human_eval.evaluation import evaluate_functional_correctness, estimate_pass_at_k
+from collections import defaultdict, Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import subprocess
+import tempfile
+import numpy as np
+
 import requests
 from tqdm import tqdm
 
+# Rust evaluation support is now built-in
+RUST_SUPPORT = True
+
 # API Configuration
-API_KEY = ''
+API_KEY = 'sk-67cI50BNxSw7SsYSkQGvGw'
 BASE_URL = 'https://grid.ai.juspay.net'
 
 # Model Configuration  
 BASE_MODEL = "kat-dev-base-72b"
 FINE_TUNED_MODEL = "kat-dev-hs-72b"
+
+
+# ============================================================================
+# Rust Evaluation Functions
+# ============================================================================
+
+def clean_rust_completion(completion: str) -> str:
+    """Clean Rust completion by removing markdown markers."""
+    completion = completion.replace("```rust", "").replace("```", "")
+    return completion.strip()
+
+
+def check_rust_correctness(problem: dict, completion: str, timeout: float = 10.0, completion_id: int = None) -> dict:
+    """
+    Check if a Rust completion is correct by compiling and running tests.
+    
+    Args:
+        problem: Problem dict with prompt, tests, etc.
+        completion: Generated Rust code
+        timeout: Timeout in seconds
+        completion_id: Optional ID for tracking
+        
+    Returns:
+        dict with task_id, passed, result, completion_id
+    """
+    # Clean the completion
+    completion = clean_rust_completion(completion)
+    
+    # Create a temporary Rust project
+    with tempfile.TemporaryDirectory() as tmpdir:
+        project_dir = Path(tmpdir) / "test_project"
+        
+        try:
+            # Initialize cargo project
+            result = subprocess.run(
+                ["cargo", "init", "--name", "solution", str(project_dir)],
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            
+            if result.returncode != 0:
+                return {
+                    "task_id": problem["task_id"],
+                    "passed": False,
+                    "result": f"cargo init failed: {result.stderr}",
+                    "completion_id": completion_id
+                }
+            
+            # Write the solution code
+            src_file = project_dir / "src" / "main.rs"
+            
+            # Combine prompt + completion + tests
+            full_code = problem["prompt"] + "\n" + completion + "\n" + problem["tests"]
+            
+            with open(src_file, 'w') as f:
+                f.write(full_code)
+            
+            # Try to compile and run
+            result = subprocess.run(
+                ["cargo", "test", "--release"],
+                cwd=project_dir,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            
+            passed = result.returncode == 0
+            
+            return {
+                "task_id": problem["task_id"],
+                "passed": passed,
+                "result": "passed" if passed else f"failed: {result.stderr[:200]}",
+                "completion_id": completion_id
+            }
+            
+        except subprocess.TimeoutExpired:
+            return {
+                "task_id": problem["task_id"],
+                "passed": False,
+                "result": "timed out",
+                "completion_id": completion_id
+            }
+        except Exception as e:
+            return {
+                "task_id": problem["task_id"],
+                "passed": False,
+                "result": f"error: {str(e)[:200]}",
+                "completion_id": completion_id
+            }
+
+
+def evaluate_rust_correctness(sample_file: str, problem_file: str, k: list = [1, 10, 100], n_workers: int = 2):
+    """
+    Evaluate Rust code samples for functional correctness.
+    
+    Args:
+        sample_file: Path to samples jsonl file
+        problem_file: Path to problems file or dict of problems
+        k: List of k values for pass@k
+        n_workers: Number of parallel workers
+        
+    Returns:
+        dict with pass@k metrics
+    """
+    # Load problems
+    if isinstance(problem_file, str):
+        problems = read_problems(problem_file)
+    else:
+        problems = problem_file
+    
+    # Check samples against test suites
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        futures = []
+        completion_id = Counter()
+        n_samples = 0
+        results = defaultdict(list)
+        
+        print("Reading Rust samples...")
+        for sample in tqdm.tqdm(stream_jsonl(sample_file)):
+            task_id = sample["task_id"]
+            completion = sample["completion"]
+            args = (problems[task_id], completion, 10.0, completion_id[task_id])
+            future = executor.submit(check_rust_correctness, *args)
+            futures.append(future)
+            completion_id[task_id] += 1
+            n_samples += 1
+        
+        print(f"Running Rust test suites ({n_samples} samples)...")
+        for future in tqdm.tqdm(as_completed(futures), total=len(futures)):
+            result = future.result()
+            results[result["task_id"]].append((result["completion_id"], result))
+    
+    # Calculate pass@k
+    total, correct = [], []
+    for result in results.values():
+        result.sort()
+        passed = [r[1]["passed"] for r in result]
+        total.append(len(passed))
+        correct.append(sum(passed))
+    
+    total = np.array(total)
+    correct = np.array(correct)
+    
+    ks = k
+    pass_at_k = {
+        f"pass@{k}": estimate_pass_at_k(total, correct, k).mean()
+        for k in ks if (total >= k).all()
+    }
+    
+    # Save results
+    def combine_results():
+        for sample in stream_jsonl(sample_file):
+            task_id = sample["task_id"]
+            result = results[task_id].pop(0)
+            sample["result"] = result[1]["result"]
+            sample["passed"] = result[1]["passed"]
+            yield sample
+    
+    out_file = sample_file + "_results.jsonl"
+    print(f"Writing Rust results to {out_file}...")
+    write_jsonl(out_file, tqdm.tqdm(combine_results(), total=n_samples))
+    
+    return pass_at_k
 
 
 def setup_logging(model_name, output_suffix):
@@ -241,6 +414,10 @@ def run_eval_api(model_name, output_file="samples.jsonl", k=[1, 10], num_samples
     print(f"\n🧪 Evaluating functional correctness...")
     try:
         if language.lower() == "rust":
+            if not RUST_SUPPORT:
+                print("❌ Rust support not available - cannot evaluate Rust code")
+                print("ℹ️  Please use Python mode or add run_humaneval.py with Rust support")
+                return None
             results = evaluate_rust_correctness(
                 sample_file=output_file,
                 problem_file=problem_file if problem_file else problems,
