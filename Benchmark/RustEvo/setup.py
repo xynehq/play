@@ -2,6 +2,9 @@
 """
 RustEvo Benchmark Setup and Execution Script
 This script automates the setup and execution of RustEvo benchmarks
+Clones the RustEvo repository and runs RQ1 and RQ3 evaluations
+
+Repository: https://github.com/SYSUSELab/RustEvo
 """
 
 import os
@@ -10,6 +13,11 @@ import subprocess
 import shutil
 import argparse
 from pathlib import Path
+import json
+
+# Configuration
+RUSTEVO_REPO = "https://github.com/SYSUSELab/RustEvo.git"
+RUSTEVO_DIR = "RustEvo"
 
 def print_info(message):
     """Print info message"""
@@ -50,6 +58,32 @@ def run_command(cmd, shell=False, check=True, capture_output=False):
         return result
     except subprocess.CalledProcessError as e:
         return None
+
+def clone_rustevo_repo():
+    """Clone RustEvo repository"""
+    print_section("Cloning RustEvo Repository")
+    
+    if os.path.exists(RUSTEVO_DIR):
+        print_info(f"RustEvo directory already exists at {RUSTEVO_DIR}")
+        response = input("Do you want to use the existing directory? (y/n): ").strip().lower()
+        if response == 'y':
+            print_success("Using existing RustEvo directory")
+            return True
+        else:
+            print_info("Removing existing directory...")
+            shutil.rmtree(RUSTEVO_DIR)
+    
+    print_info(f"Cloning from {RUSTEVO_REPO}...")
+    
+    result = run_command(["git", "clone", RUSTEVO_REPO, RUSTEVO_DIR], check=False)
+    
+    if result and result.returncode == 0:
+        print_success(f"Successfully cloned RustEvo to {RUSTEVO_DIR}")
+        return True
+    else:
+        print_error("Failed to clone RustEvo repository")
+        print_info("Please clone manually: git clone https://github.com/SYSUSELab/RustEvo.git")
+        return False
 
 def install_rust():
     """Install Rust toolchain"""
@@ -119,13 +153,35 @@ def install_python_deps():
     print_success("Python dependencies installed successfully")
     return True
 
+def get_api_credentials():
+    """Get API credentials from user input"""
+    print_section("API Configuration")
+    
+    # Check if already in environment
+    api_key = os.environ.get('API_KEY', '')
+    base_url = os.environ.get('BASE_URL', '')
+    
+    if not api_key:
+        api_key = input("Enter API Key: ").strip()
+        os.environ['API_KEY'] = api_key
+    else:
+        print_info(f"Using API_KEY from environment")
+    
+    if not base_url:
+        base_url = input("Enter Base URL (e.g., https://grid.ai.juspay.net): ").strip()
+        os.environ['BASE_URL'] = base_url
+    else:
+        print_info(f"Using BASE_URL from environment: {base_url}")
+    
+    return api_key, base_url
+
 def verify_datasets():
     """Verify that required dataset files exist"""
     print_section("Verifying Dataset Files")
     
     dataset_files = [
-        "Dataset/RustEvo^2.json",
-        "Dataset/APIDocs.json"
+        f"{RUSTEVO_DIR}/Dataset/RustEvo^2.json",
+        f"{RUSTEVO_DIR}/Dataset/APIDocs.json"
     ]
     
     all_exist = True
@@ -142,7 +198,7 @@ def create_results_dir():
     """Create results directory if it doesn't exist"""
     print_section("Creating Results Directory")
     
-    results_dir = "Results"
+    results_dir = f"{RUSTEVO_DIR}/Results"
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
         print_success("Created Results directory")
@@ -161,27 +217,37 @@ def run_rq1(model="kat-dev-hs-72b", max_workers=8):
     api_key = os.environ.get('API_KEY', '')
     base_url = os.environ.get('BASE_URL', '')
     
-    cmd = [
-        "python3", "Evaluate/eval_models_rq1.py",
-        "--file_a", "./Dataset/RustEvo^2.json",
-        "--file_b", "./Dataset/APIDocs.json",
-        "--output", "./Results/rq1_results.json",
-        "--models", model,
-        "--max_workers", str(max_workers),
-        "--api_key", api_key,
-        "--base_url", base_url
-    ]
+    # Save current directory
+    original_dir = os.getcwd()
     
-    result = run_command(cmd, check=False)
-    
-    if result and result.returncode == 0:
-        print_success("RQ1 evaluation completed successfully!")
-        print_info("Results saved to: Results/rq1_results.json")
-        print_info("Metrics saved to: Results/rq1_results_metrics.json")
-        return True
-    else:
-        print_error("RQ1 evaluation failed")
-        return False
+    try:
+        # Change to RustEvo directory
+        os.chdir(RUSTEVO_DIR)
+        
+        cmd = [
+            "python3", "Evaluate/eval_models_rq1.py",
+            "--file_a", "./Dataset/RustEvo^2.json",
+            "--file_b", "./Dataset/APIDocs.json",
+            "--output", "./Results/rq1_results.json",
+            "--models", model,
+            "--max_workers", str(max_workers),
+            "--api_key", api_key,
+            "--base_url", base_url
+        ]
+        
+        result = run_command(cmd, check=False)
+        
+        if result and result.returncode == 0:
+            print_success("RQ1 evaluation completed successfully!")
+            print_info(f"Results saved to: {RUSTEVO_DIR}/Results/rq1_results.json")
+            print_info(f"Metrics saved to: {RUSTEVO_DIR}/Results/rq1_results_metrics.json")
+            return True
+        else:
+            print_error("RQ1 evaluation failed")
+            return False
+    finally:
+        # Return to original directory
+        os.chdir(original_dir)
 
 def run_rq3(model="kat-dev-hs-72b", max_workers=8):
     """Run RQ3 evaluation"""
@@ -194,42 +260,55 @@ def run_rq3(model="kat-dev-hs-72b", max_workers=8):
     api_key = os.environ.get('API_KEY', '')
     base_url = os.environ.get('BASE_URL', '')
     
-    cmd = [
-        "python3", "Evaluate/eval_models_rq3.py",
-        "--file_a", "./Dataset/RustEvo^2.json",
-        "--file_b", "./Dataset/APIDocs.json",
-        "--output", "./Results/rq3_results.json",
-        "--models", model,
-        "--max_workers", str(max_workers),
-        "--api_key", api_key,
-        "--base_url", base_url
-    ]
+    # Save current directory
+    original_dir = os.getcwd()
     
-    result = run_command(cmd, check=False)
-    
-    if result and result.returncode == 0:
-        print_success("RQ3 evaluation completed successfully!")
-        print_info("Results saved to: Results/rq3_results.json")
-        print_info("Metrics saved to: Results/rq3_results_metrics.json")
-        return True
-    else:
-        print_error("RQ3 evaluation failed")
-        return False
+    try:
+        # Change to RustEvo directory
+        os.chdir(RUSTEVO_DIR)
+        
+        cmd = [
+            "python3", "Evaluate/eval_models_rq3.py",
+            "--file_a", "./Dataset/RustEvo^2.json",
+            "--file_b", "./Dataset/APIDocs.json",
+            "--output", "./Results/rq3_results.json",
+            "--models", model,
+            "--max_workers", str(max_workers),
+            "--api_key", api_key,
+            "--base_url", base_url
+        ]
+        
+        result = run_command(cmd, check=False)
+        
+        if result and result.returncode == 0:
+            print_success("RQ3 evaluation completed successfully!")
+            print_info(f"Results saved to: {RUSTEVO_DIR}/Results/rq3_results.json")
+            print_info(f"Metrics saved to: {RUSTEVO_DIR}/Results/rq3_results_metrics.json")
+            return True
+        else:
+            print_error("RQ3 evaluation failed")
+            return False
+    finally:
+        # Return to original directory
+        os.chdir(original_dir)
 
 def display_results():
     """Display results summary"""
     print_section("Results Summary")
     
-    if os.path.exists("Results/rq1_results_metrics.json"):
-        print_info("RQ1 Metrics available at: Results/rq1_results_metrics.json")
+    rq1_metrics = f"{RUSTEVO_DIR}/Results/rq1_results_metrics.json"
+    rq3_metrics = f"{RUSTEVO_DIR}/Results/rq3_results_metrics.json"
     
-    if os.path.exists("Results/rq3_results_metrics.json"):
-        print_info("RQ3 Metrics available at: Results/rq3_results_metrics.json")
+    if os.path.exists(rq1_metrics):
+        print_info(f"RQ1 Metrics available at: {rq1_metrics}")
+    
+    if os.path.exists(rq3_metrics):
+        print_info(f"RQ3 Metrics available at: {rq3_metrics}")
     
     print()
     print_info("To view detailed metrics, use:")
-    print("  cat Results/rq1_results_metrics.json | python3 -m json.tool")
-    print("  cat Results/rq3_results_metrics.json | python3 -m json.tool")
+    print(f"  cat {rq1_metrics} | python3 -m json.tool")
+    print(f"  cat {rq3_metrics} | python3 -m json.tool")
 
 def show_menu():
     """Display interactive menu"""
@@ -248,6 +327,14 @@ def show_menu():
 
 def interactive_mode():
     """Run in interactive menu mode"""
+    # Clone repository first
+    if not clone_rustevo_repo():
+        print_error("Failed to clone RustEvo repository. Exiting...")
+        sys.exit(1)
+    
+    # Get API credentials
+    get_api_credentials()
+    
     while True:
         show_menu()
         choice = input("Select an option (1-6): ").strip()
@@ -258,10 +345,7 @@ def interactive_mode():
             verify_datasets()
             create_results_dir()
             
-            model = input("Enter model name (default: kat-dev-hs-72b): ").strip()
-            if not model:
-                model = "kat-dev-hs-72b"
-            
+            model = input("Enter model name: ").strip()
             workers = input("Enter max workers (default: 8): ").strip()
             if not workers:
                 workers = 8
@@ -283,10 +367,7 @@ def interactive_mode():
             verify_datasets()
             create_results_dir()
             
-            model = input("Enter model name (default: kat-dev-hs-72b): ").strip()
-            if not model:
-                model = "kat-dev-hs-72b"
-            
+            model = input("Enter model name: ").strip()
             workers = input("Enter max workers (default: 8): ").strip()
             if not workers:
                 workers = 8
@@ -300,10 +381,7 @@ def interactive_mode():
             verify_datasets()
             create_results_dir()
             
-            model = input("Enter model name (default: kat-dev-hs-72b): ").strip()
-            if not model:
-                model = "kat-dev-hs-72b"
-            
+            model = input("Enter model name: ").strip()
             workers = input("Enter max workers (default: 8): ").strip()
             if not workers:
                 workers = 8
@@ -317,10 +395,7 @@ def interactive_mode():
             verify_datasets()
             create_results_dir()
             
-            model = input("Enter model name (default: kat-dev-hs-72b): ").strip()
-            if not model:
-                model = "kat-dev-hs-72b"
-            
+            model = input("Enter model name: ").strip()
             workers = input("Enter max workers (default: 8): ").strip()
             if not workers:
                 workers = 8
@@ -382,16 +457,30 @@ Examples:
     
     # Handle command line arguments
     if args.install:
+        if not clone_rustevo_repo():
+            print_error("Failed to clone RustEvo repository")
+            sys.exit(1)
         install_rust()
         install_python_deps()
+        get_api_credentials()
         verify_datasets()
         create_results_dir()
         print_success("Setup completed successfully!")
         sys.exit(0)
     
     elif args.rq1 is not None:
-        model = args.rq1[0] if len(args.rq1) > 0 else "kat-dev-hs-72b"
-        workers = int(args.rq1[1]) if len(args.rq1) > 1 else 8
+        if not clone_rustevo_repo():
+            print_error("Failed to clone RustEvo repository")
+            sys.exit(1)
+        # Prompt for model if not provided
+        if not args.rq1 or len(args.rq1) == 0:
+            model = input("Enter model name: ").strip()
+            workers_input = input("Enter max workers (default: 8): ").strip()
+            workers = int(workers_input) if workers_input else 8
+        else:
+            model = args.rq1[0]
+            workers = int(args.rq1[1]) if len(args.rq1) > 1 else 8
+        get_api_credentials()
         verify_datasets()
         create_results_dir()
         run_rq1(model, workers)
@@ -399,8 +488,18 @@ Examples:
         sys.exit(0)
     
     elif args.rq3 is not None:
-        model = args.rq3[0] if len(args.rq3) > 0 else "kat-dev-hs-72b"
-        workers = int(args.rq3[1]) if len(args.rq3) > 1 else 8
+        if not clone_rustevo_repo():
+            print_error("Failed to clone RustEvo repository")
+            sys.exit(1)
+        # Prompt for model if not provided
+        if not args.rq3 or len(args.rq3) == 0:
+            model = input("Enter model name: ").strip()
+            workers_input = input("Enter max workers (default: 8): ").strip()
+            workers = int(workers_input) if workers_input else 8
+        else:
+            model = args.rq3[0]
+            workers = int(args.rq3[1]) if len(args.rq3) > 1 else 8
+        get_api_credentials()
         verify_datasets()
         create_results_dir()
         run_rq3(model, workers)
@@ -408,10 +507,20 @@ Examples:
         sys.exit(0)
     
     elif args.all is not None:
-        model = args.all[0] if len(args.all) > 0 else "kat-dev-hs-72b"
-        workers = int(args.all[1]) if len(args.all) > 1 else 8
+        if not clone_rustevo_repo():
+            print_error("Failed to clone RustEvo repository")
+            sys.exit(1)
+        # Prompt for model if not provided
+        if not args.all or len(args.all) == 0:
+            model = input("Enter model name: ").strip()
+            workers_input = input("Enter max workers (default: 8): ").strip()
+            workers = int(workers_input) if workers_input else 8
+        else:
+            model = args.all[0]
+            workers = int(args.all[1]) if len(args.all) > 1 else 8
         install_rust()
         install_python_deps()
+        get_api_credentials()
         verify_datasets()
         create_results_dir()
         run_rq1(model, workers)
