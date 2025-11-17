@@ -1,290 +1,488 @@
-# RustEvo²
-**Repo Under Construction ...**
+# RustEvo: Benchmarking LLMs on Rust API Evolution
 
-This repository contains code and datasets for the paper [&#34;RustEvo²: An Evolving Benchmark for API Evolution in LLM-based Rust Code Generation&#34;](https://arxiv.org/abs/)
+## What is RustEvo?
 
+**RustEvo** is a comprehensive benchmark designed to evaluate Large Language Models (LLMs) on their ability to work with evolving Rust APIs. As Rust libraries evolve, APIs change—signatures are modified, parameters are added or removed, return types change, and functions are deprecated. RustEvo tests whether LLMs can generate correct code that adapts to these API changes.
 
+### Key Features
 
-## Dataset Overview
-Our work can be divided into two phases: 
-Phase I: API Evolution Data Collection - We collect API changes from multiple sources including official Rust repositories and third-party crates. We analyze changelogs, documentation, and implementation changes to identify and categorize API evolutions into Stabilizations, Signature Changes, Behavioral Changes, and Deprecations.
+- **588 Real-World Tasks**: Curated from actual Rust API evolution across popular crates
+- **Comprehensive Test Coverage**: Each task includes queries, function signatures, and test programs
+- **Multiple Evaluation Scenarios**: Tests models with varying levels of API documentation
+- **Detailed Metrics**: Pass@1, API usage accuracy, borrow-checker error rates, and more
+- **Automated Testing**: Built-in Rust compilation and test execution
 
-Phase II: RustEvo² Construction - We transform the collected API evolution data into natural programming tasks using an LLM-based generation pipeline. This process creates programming queries, code solutions, and test programs that implicitly require the use of specific API versions.
+### Why RustEvo?
 
-The following figure illustrates our two-phase framework:
-<div align="center">
-  <img src="Imgs/overview.png" alt="RustEvo² Framework Overview" width="100%"/>
-</div>
-
-
-
-### Dataset Format
-RustEvo² consists of 588 API changes (380 from Rust standard libraries, 208 from 15 third-party crates) spanning versions 1.71.0 to 1.84.0. These changes are categorized into four types: Stabilizations (31.3%), Signature Changes (31.5%), Behavioral Changes (33.2%), and Deprecations (4.1%), reflecting their actual distribution in the Rust ecosystem.
-
-Each task in RustEvo² consists of <API change information, programming query, function signature, reference solution, test program>. The API change information includes name, module path, version details, documentation, and source code. Programming queries describe real-world scenarios without explicitly mentioning the API. Function signatures guide implementation without revealing API specifics. Test programs verify correct API usage and functional behavior.
-
-One task example:
-```json
-    {
-        "task_idx": 39,
-        "query": "In a performance-critical application, you need to efficiently update a large collection of objects by cloning their state from another collection. The objects implement a custom `Clone` trait, but you want to avoid unnecessary trait bounds that could complicate the implementation. Design a function to handle this cloning operation efficiently.",
-        "function_signature": "fn update_collection<T: Clone>(target: &mut Vec<T>, source: &Vec<T>)",
-        "code": "fn update_collection<T: Clone>(target: &mut Vec<T>, source: &Vec<T>) {\n    target.truncate(source.len());\n    for (t, s) in target.iter_mut().zip(source.iter()) {\n        t.clone_from(s);\n    }\n    if target.len() < source.len() {\n        target.extend(source[target.len()..].iter().cloned());\n    }\n}",
-        "test_program": "..."
-    },
-```
-
-
-## Usage
-
-### Quick Start with setup.py ⚡ (Recommended)
-
-The easiest way to get started is using our automated setup script:
-
-```bash
-python3 setup.py
-```
-
-**This interactive script will:**
-- ✅ Clone RustEvo repository automatically
-- ✅ Install Rust toolchain
-- ✅ Install Python dependencies (openai, tqdm)
-- ✅ Prompt for API configuration (API Key, Base URL, Model names)
-- ✅ Verify dataset files exist
-- ✅ Run RQ1 and/or RQ3 evaluations
-- ✅ Save results to `RustEvo/Results/`
-
-**Interactive Menu Options:**
-```
-1. Full Setup (Install dependencies + Run both RQ1 & RQ3)
-2. Install Dependencies Only
-3. Run RQ1 Only (Full Documentation)
-4. Run RQ3 Only (Minimal Documentation)
-5. Run Both RQ1 & RQ3
-6. Exit
-```
-
-**Command-Line Usage:**
-```bash
-# Install dependencies only
-python3 setup.py --install
-
-# Run RQ1 evaluation with interactive prompts
-python3 setup.py --rq1
-
-# Run RQ1 with specific model
-python3 setup.py --rq1 kat-dev-hs-72b 8
-
-# Run RQ3 evaluation
-python3 setup.py --rq3 kat-dev-hs-72b 4
-
-# Full setup and run both evaluations
-python3 setup.py --all kat-dev-hs-72b 8
-```
-
-**What you need:**
-- Python 3.x installed
-- API credentials (will be prompted during setup)
+Rust's unique features (ownership, borrowing, lifetimes) make API evolution particularly challenging. RustEvo helps:
+- **Researchers**: Evaluate LLM performance on systems programming tasks
+- **Tool Developers**: Benchmark code generation tools for Rust
+- **Model Creators**: Assess and improve LLM understanding of Rust semantics
 
 ---
 
-### Manual Setup
+## Research Questions (RQ)
 
-If you prefer manual control:
+RustEvo evaluates models through different research questions:
 
-**1. Environment Setup:**
+### RQ1: Full Documentation Evaluation
 
+**Goal**: Can LLMs generate correct code when provided with complete API documentation?
+
+**What's Provided**:
+- Complete API signature
+- Full API documentation
+- Source code implementation
+- Version change information
+
+**Use Case**: Simulates scenarios where developers have access to comprehensive API documentation and need to migrate code to new API versions.
+
+---
+
+### RQ3: Minimal Documentation Evaluation
+
+**Goal**: Can LLMs generate correct code with minimal API information?
+
+**What's Provided**:
+- API name
+- Module path only
+
+**Use Case**: Simulates real-world scenarios where developers must work with limited documentation or infer API usage from context.
+
+---
+
+## Prerequisites
+
+### System Requirements
+- **Operating System**: macOS, Linux, or Windows with WSL
+- **Python**: 3.8 or higher
+- **Rust**: Latest stable version (install via [rustup](https://rustup.rs/))
+
+### Required Tools
+
+1. **Install Rust and Cargo**:
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   source $HOME/.cargo/env
+   rustc --version  # Verify installation
+   ```
+
+2. **Install Python Dependencies**:
+   ```bash
+   pip install openai tqdm
+   ```
+
+## Quick Start
+
+> **📝 Note: Configuring Model and API Credentials**
+> 
+> To use different models or API endpoints, you can either:
+> 1. **Use environment variables** (recommended):
+>    ```bash
+>    export API_KEY="your-api-key"
+>    export BASE_URL="https://your-endpoint.com"
+>    ```
+> 2. **Edit the evaluation scripts directly**:
+>    - Open `Evaluate/eval_models_rq1.py`
+>    - Open `Evaluate/eval_models_rq3.py`
+>    - Modify these lines:
+>      ```python
+>      API_KEY = os.getenv('API_KEY', 'your-default-key-here')
+>      BASE_URL = os.getenv('BASE_URL', 'https://your-default-endpoint.com')
+>      MODELS = ["your-model-name"]  # Change default model
+>      ```
+
+---
+
+### 🚀 Method 1: Automated Setup Script (Recommended)
+
+**Choose Your Preferred Script:**
+- **setup.py** - Python script (Cross-platform: macOS, Linux, Windows) - Plain text output
+- **setup.sh** - Bash script (Unix/Linux/macOS only) - Colored terminal output
+
+Both scripts provide identical functionality with different output styles!
+
+---
+
+#### Option A: Using Python Script (Recommended - Works Everywhere)
+
+**About setup.py:**
+The `setup.py` script is a cross-platform Python automation tool that handles complete RustEvo benchmarking workflow:
+
+**Key Features:**
+- ✅ **Cross-Platform**: Works on macOS, Linux, and Windows (no bash required)
+- ✅ **Automatic Installation**: Installs Rust toolchain and Python dependencies
+- ✅ **Dataset Validation**: Verifies all required files exist
+- ✅ **Interactive Mode**: Menu-driven interface for easy operation
+- ✅ **Command-Line Mode**: Full automation with arguments
+- ✅ **Error Handling**: Clear error messages and status reporting
+
+**One-Command Setup & Run:**
 ```bash
-conda create -n RustEvo python=3.8
-conda activate RustEvo
-pip install -r requirements.txt
+# Set your API credentials
+export API_KEY="your-api-key-here"
+export BASE_URL="https://your-api-endpoint.com"
+
+# Run full setup and both evaluations
+python3 setup.py --all
 ```
 
-**2. Install Rust toolchain:**
+**Step-by-Step Commands:**
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustup toolchain install 1.71.0 1.72.0 1.73.0 1.74.0 1.75.0 1.76.0 1.77.0 1.78.0 1.79.0 1.80.0 1.81.0 1.82.0 1.83.0 1.84.0
-```
+# 1. Set API credentials
+export API_KEY="your-api-key-here"
+export BASE_URL="https://your-api-endpoint.com"
 
-### Construct your own evolving dataset
-If you don't want to construct a new dataset, you can directly use the existing dataset in the `data` folder.
+# 2. Install dependencies only
+python3 setup.py --install
 
-1. Phase I: API Evolution Collection
-```bash
-python scripts/rust_api_analyzer.py --repo ./rust-repo --output ./reports --start 1.72.0 --end 1.84.0
-python scripts/crate_analyzer.py --crates_num 15 --start_date 2024-01-01 --end_date 2025-02-21
-```
+# 3. Run RQ1 evaluation
+python3 setup.py --rq1 kat-dev-hs-72b 8
 
-2. Phase II: Task Generation
-```bash
-python scripts/generate_query.py --input ./reports/rust_api_changes.json --output ./data/queries/queries_rust.json
-python scripts/generate_code.py --input ./data/queries/queries_rust.json --output ./data/codes/codes_rust.json
-python scripts/generate_test.py --input_file ./data/codes/codes_rust.json --output_file ./data/test_programs/test_programs_rust.json
-```
+# 4. Run RQ3 evaluation
+python3 setup.py --rq3 kat-dev-hs-72b 8
 
-### Running Evaluations
-
-#### Option 1: Using setup.py (Recommended)
-
-The `setup.py` script provides an easy way to run evaluations:
-
-**Interactive Mode:**
-```bash
+# 5. Interactive menu mode
 python3 setup.py
-# Select option 3, 4, or 5 from the menu
-# Enter your model name when prompted
-# Enter max workers (default: 8)
 ```
 
-**Command-Line Mode:**
+**All Available Commands:**
 ```bash
-# Run RQ1 (Full Documentation)
-python3 setup.py --rq1 your-model-name 8
-
-# Run RQ3 (Minimal Documentation) 
-python3 setup.py --rq3 your-model-name 4
-
-# Run both RQ1 and RQ3
-python3 setup.py --all your-model-name 8
+python3 setup.py --install          # Install dependencies only
+python3 setup.py --rq1 MODEL WORKERS # Run RQ1 only
+python3 setup.py --rq3 MODEL WORKERS # Run RQ3 only
+python3 setup.py --all MODEL WORKERS # Run both RQ1 & RQ3
+python3 setup.py                     # Interactive menu mode
+python3 setup.py --help              # Show help
 ```
 
-**What the evaluations test:**
-- **RQ1 (Full Documentation):** Tests model performance with complete API documentation
-- **RQ3 (Minimal Documentation):** Tests model performance with minimal API documentation
+---
 
-**Output Files:**
-- `RustEvo/Results/rq1_results.json` - Detailed RQ1 results
-- `RustEvo/Results/rq1_results_metrics.json` - RQ1 metrics summary
-- `RustEvo/Results/rq3_results.json` - Detailed RQ3 results
-- `RustEvo/Results/rq3_results_metrics.json` - RQ3 metrics summary
+#### Option B: Using Bash Script (Unix/Linux/macOS)
 
-#### Option 2: Manual Evaluation
-
-If you prefer to run evaluations manually:
-
-**1. Configure your model:**
-Edit `Evaluate/eval_models_rq1.py` or `Evaluate/eval_models_rq3.py` to set your API credentials
-
-**2. Run evaluation:**
+**One-Command Setup & Run:**
 ```bash
-cd RustEvo
+# Set your API credentials
+export API_KEY="your-api-key-here"
+export BASE_URL="https://your-api-endpoint.com"
+
+# Run full setup and both evaluations
+chmod +x setup.sh && ./setup.sh --all
+```
+
+**All Available Commands:**
+```bash
+./setup.sh --install          # Install dependencies only
+./setup.sh --rq1 MODEL WORKERS # Run RQ1 only
+./setup.sh --rq3 MODEL WORKERS # Run RQ3 only
+./setup.sh --all MODEL WORKERS # Run both RQ1 & RQ3
+./setup.sh                     # Interactive menu mode
+./setup.sh --help              # Show help
+```
+
+---
+
+**What the scripts do:**
+- ✅ Installs Rust toolchain (rustc, cargo)
+- ✅ Installs Python dependencies (openai, tqdm)
+- ✅ Verifies dataset files exist
+- ✅ Creates Results directory
+- ✅ Runs evaluations with progress tracking
+- ✅ Displays comprehensive results summary
+
+---
+
+### 🛠️ Method 2: Manual Setup and Execution
+
+**Quick Start:**
+```bash
+# 1. Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+
+# 2. Install Python dependencies
+pip3 install openai tqdm
+
+# 3. Set API credentials
+export API_KEY="your-api-key-here"
+export BASE_URL="https://your-api-endpoint.com"
+
+# 4. Run RQ1 evaluation
+python3 Evaluate/eval_models_rq1.py \
+  --file_a ./Dataset/RustEvo^2.json \
+  --file_b ./Dataset/APIDocs.json \
+  --output ./Results/rq1_results.json \
+  --models kat-dev-hs-72b \
+  --max_workers 8
+
+# 5. Run RQ3 evaluation
+python3 Evaluate/eval_models_rq3.py \
+  --file_a ./Dataset/RustEvo^2.json \
+  --file_b ./Dataset/APIDocs.json \
+  --output ./Results/rq3_results.json \
+  --models kat-dev-hs-72b \
+  --max_workers 8
+```
+
+**Detailed Manual Setup:**
+
+1. **Install Rust Toolchain**:
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   source $HOME/.cargo/env
+   rustc --version  # Verify installation
+   ```
+
+2. **Install Python Dependencies**:
+   ```bash
+   pip3 install --upgrade pip
+   pip3 install openai tqdm
+   ```
+
+3. **Configure API Credentials**:
+   ```bash
+   export API_KEY="your-api-key-here"
+   export BASE_URL="https://your-api-endpoint.com"
+   ```
+
+4. **Verify Dataset Files**:
+   Ensure these files exist:
+   - `Dataset/RustEvo^2.json` - Task definitions
+   - `Dataset/APIDocs.json` - API documentation
+
+## Running Evaluations
+
+### RQ1: Full Documentation Evaluation
+
+Evaluates models with complete API documentation including signatures, documentation, and source code.
+
+#### Using Automated Script:
+```bash
+./setup.sh --rq1 kat-dev-hs-72b 8
+```
+
+#### Using Manual Command:
+```bash
+# Set API credentials first
+export API_KEY="your-api-key-here"
+export BASE_URL="https://your-api-endpoint.com"
+
+# Run RQ1 evaluation
+python3 Evaluate/eval_models_rq1.py \
+  --file_a ./Dataset/RustEvo^2.json \
+  --file_b ./Dataset/APIDocs.json \
+  --output ./Results/rq1_results.json \
+  --models kat-dev-hs-72b \
+  --max_workers 8 \
+  --api_key $API_KEY \
+  --base_url $BASE_URL
+```
+
+**Parameters**:
+- `--file_a`: Path to task dataset (queries and tests)
+- `--file_b`: Path to API documentation dataset
+- `--output`: Path for results output (JSON format)
+- `--models`: List of model names to evaluate (space-separated)
+- `--max_workers`: Number of parallel workers (default: 8)
+- `--api_key`: API key for LLM service (optional if set in environment)
+- `--base_url`: Base URL for LLM service (optional if set in environment)
+
+**Output Files**:
+- `Results/rq1_results.json` - Detailed results for each task
+- `Results/rq1_results_metrics.json` - Aggregated metrics and statistics
+
+---
+
+### RQ3: Minimal Documentation Evaluation
+
+Evaluates models with minimal API information (only API name and module).
+
+#### Using Automated Script:
+```bash
+./setup.sh --rq3 kat-dev-hs-72b 8
+```
+
+#### Using Manual Command:
+```bash
+# Set API credentials first
+export API_KEY="your-api-key-here"
+export BASE_URL="https://your-api-endpoint.com"
+
+# Run RQ3 evaluation
+python3 Evaluate/eval_models_rq3.py \
+  --file_a ./Dataset/RustEvo^2.json \
+  --file_b ./Dataset/APIDocs.json \
+  --output ./Results/rq3_results.json \
+  --models kat-dev-hs-72b \
+  --max_workers 8 \
+  --api_key $API_KEY \
+  --base_url $BASE_URL
+```
+
+**Parameters**: Same as RQ1
+
+**Output Files**:
+- `Results/rq3_results.json` - Detailed results for each task
+- `Results/rq3_results_metrics.json` - Aggregated metrics and statistics
+
+---
+
+### Running Both RQ1 and RQ3
+
+#### Using Automated Script:
+```bash
+./setup.sh --all kat-dev-hs-72b 8
+```
+
+#### Using Manual Commands:
+```bash
+# Set API credentials first
+export API_KEY="your-api-key-here"
+export BASE_URL="https://your-api-endpoint.com"
 
 # Run RQ1
 python3 Evaluate/eval_models_rq1.py \
   --file_a ./Dataset/RustEvo^2.json \
   --file_b ./Dataset/APIDocs.json \
   --output ./Results/rq1_results.json \
-  --models your-model-name \
+  --models kat-dev-hs-72b \
   --max_workers 8 \
-  --api_key your-api-key \
-  --base_url https://your-api-endpoint
+  --api_key $API_KEY \
+  --base_url $BASE_URL
 
 # Run RQ3
 python3 Evaluate/eval_models_rq3.py \
   --file_a ./Dataset/RustEvo^2.json \
   --file_b ./Dataset/APIDocs.json \
   --output ./Results/rq3_results.json \
-  --models your-model-name \
+  --models kat-dev-hs-72b \
   --max_workers 8 \
-  --api_key your-api-key \
-  --base_url https://your-api-endpoint
+  --api_key $API_KEY \
+  --base_url $BASE_URL
 ```
 
-**3. View results:**
-```bash
-# View metrics
-cat RustEvo/Results/rq1_results_metrics.json | python3 -m json.tool
-cat RustEvo/Results/rq3_results_metrics.json | python3 -m json.tool
+## Understanding Results
+
+### Metrics Calculated
+
+Both evaluation scripts calculate comprehensive metrics:
+
+1. **Pass@1**: Percentage of tasks that passed on first attempt
+   - Formula: `(Success count / Total tasks) × 100`
+   
+2. **API Usage Accuracy**: Percentage of tasks that correctly used the target API
+   - Formula: `(Tasks using API / Total tasks) × 100`
+
+3. **API Coverage (Distinct)**: Percentage of unique APIs successfully used
+   - Formula: `(Distinct APIs used / Total distinct APIs) × 100`
+
+4. **Borrow-checker Failure Rate**: Percentage of failures due to borrow checker errors
+   - Formula: `(Borrow checker failures / Total failures) × 100`
+
+5. **Compilation Errors**: Count of compilation failures
+
+6. **Test Failures**: Count of runtime test failures
+
+### Metrics by Change Type
+
+Results are also broken down by API change type:
+- `signature` - Signature changes
+- `parameter_addition` - New parameters added
+- `return_type_change` - Return type modifications
+- `deprecation` - Deprecated APIs
+- And more...
+
+### Example Metrics Output
+
+```json
+{
+  "kat-dev-hs-72b": {
+    "total_tasks": 588,
+    "success_count": 141,
+    "pass_at_1": 23.98,
+    "api_usage_accuracy": 82.82,
+    "api_coverage_distinct": 75.50,
+    "api_coverage_distinct_count": "150/200",
+    "borrow_checker_failure_rate_over_failures": 76.73,
+    "compilation_errors": 250,
+    "test_failures": 197
+  }
+}
 ```
 
+## Checkpoint and Resume
 
-## Script Documentation
+Both scripts support checkpointing:
+- Results are automatically saved every 10 tasks
+- If interrupted, re-run the same command to resume from the last checkpoint
+- Already completed tasks are skipped automatically
 
-### setup.py
+## Troubleshooting
 
-**Purpose:** Automated setup and benchmark execution for RustEvo
+### Common Issues
 
-**Features:**
-- Automatic repository cloning
-- Rust toolchain installation
-- Python dependencies installation
-- Interactive API configuration
-- Dataset verification
-- RQ1 and RQ3 evaluation execution
+1. **Rust Not Found**:
+   ```
+   rustup: command not found
+   ```
+   Solution: Install Rust using rustup (see Prerequisites)
 
-**Usage Modes:**
+2. **API Key Error**:
+   ```
+   Warning: No API key provided
+   ```
+   Solution: Set API_KEY environment variable or use --api_key parameter
 
-**1. Interactive Mode (No Arguments):**
-```bash
-python3 setup.py
+3. **Import Errors**:
+   ```
+   ModuleNotFoundError: No module named 'openai'
+   ```
+   Solution: Install required packages with `pip install openai tqdm`
+
+4. **Timeout Errors**:
+   - Compilation/test timeouts are set to 30-45 seconds
+   - Large projects may need timeout adjustments in the script
+
+### Debug Mode
+
+To see detailed error messages, check the `validation_output` field in results JSON.
+
+## Project Structure
+
 ```
-Launches an interactive menu with 6 options for full control.
-
-**2. Command-Line Mode:**
-```bash
-# Install dependencies only
-python3 setup.py --install
-
-# Run RQ1 evaluation
-python3 setup.py --rq1 [MODEL_NAME] [MAX_WORKERS]
-
-# Run RQ3 evaluation
-python3 setup.py --rq3 [MODEL_NAME] [MAX_WORKERS]
-
-# Full setup and run both
-python3 setup.py --all [MODEL_NAME] [MAX_WORKERS]
+RustEvo/
+├── Dataset/
+│   ├── RustEvo^2.json      # Task dataset
+│   └── APIDocs.json        # API documentation
+├── Evaluate/
+│   ├── eval_models_rq1.py  # RQ1 evaluation script
+│   ├── eval_models_rq3.py  # RQ3 evaluation script
+│   └── ...                 # Other evaluation utilities
+├── Results/
+│   ├── rq1_results.json    # RQ1 detailed results
+│   ├── rq1_results_metrics.json  # RQ1 metrics
+│   ├── rq3_results.json    # RQ3 detailed results
+│   └── rq3_results_metrics.json  # RQ3 metrics
+└── README.md               # This file
 ```
 
-**Interactive Prompts:**
-- API Key (or uses environment variable `API_KEY`)
-- Base URL (or uses environment variable `BASE_URL`)
-- Model name
-- Max workers (default: 8)
+## Citation
 
-**Configuration:**
-```python
-# Environment variables (optional)
-export API_KEY="your-api-key"
-export BASE_URL="https://grid.ai.juspay.net"
+If you use this benchmark in your research, please cite:
 
-# Or let script prompt you interactively
+```bibtex
+@inproceedings{rustevo2024,
+  title={RustEvo: A Benchmark for Evaluating LLMs on Rust API Evolution},
+  author={...},
+  booktitle={...},
+  year={2024}
+}
 ```
 
-**Output:**
-- Results saved to `RustEvo/Results/`
-- Metrics files: `rq1_results_metrics.json`, `rq3_results_metrics.json`
-- Detailed logs in results files
+## License
 
-**Requirements:**
-- Python 3.x
-- Git (for cloning repository)
-- Internet connection (for installations)
-- API credentials
+[Specify your license here]
 
----
+## Contact
 
-## Results
-Some important results of our experiments:
-### Performance by Model
-| Model | Pass@1 (%) | API Usage Accuracy (%) | Coverage (%) |
-|-------|------------|---------|--------------|
-| Claude-3.7-Sonnet | 65.3 | 78.2 | 83.6 |
-| o1-mini | 57.5 | 70.4 | 85.2 |
-| GPT-4o | 55.4 | 68.4 | 77.2 |
-| Gemini-1.5-Pro | 55.3 | 62.6 | 60.9 |
-| DeepSeek-v3 | 54.8 | 69.7 | 71.0 |
-| Gemini-2.0-Flash | 52.6 | 73.5 | 72.5 |
-| Llama-3.1-70B | 51.0 | 65.3 | 69.0 |
-| Qwen-2.5-72B | 50.9 | 66.7 | 64.7 |
-| Claude-3.5-Sonnet | 48.1 | 68.7 | 80.3 |
-| Grok-3 | 40.5 | 67.2 | 70.4 |
-
-### Performance by API Change Type
-| Change Type | Average Pass@1 (%) |
-|-------------|-------------------|
-| Stabilizations | 65.8 |
-| Signature Changes | 58.2 |
-| Behavioral Changes | 38.0 |
-| Deprecations | 40.4 |
-
-Complete evaluation results and error analysis are [here](Results).
+For questions or issues, please open an issue on GitHub or contact [maintainer email].
