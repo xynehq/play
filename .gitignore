@@ -402,3 +402,10 @@ yarn-error.log*
 
 models/*
 !models/.gitkeep
+
+# Aider benchmark tool
+Benchmark/Polyglot/aider/
+aider/
+
+# Google Cloud SDK
+google-cloud-sdk/
