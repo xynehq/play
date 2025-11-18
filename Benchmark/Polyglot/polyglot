@@ -352,29 +352,37 @@ if not config["model"]:
 
 # API Configuration
 print("\n🔑 API Configuration:")
-print("For the benchmark to work, you need to provide API credentials.")
 
 # Get API base URL (optional for standard OpenAI)
 api_base = input("Enter your API base URL (leave empty for standard OpenAI, e.g., https://api.your-provider.com/v1): ").strip()
 
-# Get API key
-api_key = input("Enter your API key: ").strip()
-if not api_key:
-    print("❌ API key is required!")
-    sys.exit(1)
-
 if api_base:
     # Custom API endpoint
     config["api_base"] = api_base
-    config["api_key"] = api_key
     
-    print(f"✅ Custom API configured:")
-    print(f"   • Base URL: {api_base}")
-    print(f"   • Model: {config['model']}")
-    print(f"   • API Key: {'*' * (len(api_key) - 4) + api_key[-4:] if len(api_key) > 4 else '****'}")
+    # For custom endpoints, API key might be optional
+    print("For custom API endpoints, authentication may be optional.")
+    api_key = input("Enter your API key (leave empty if no authentication required): ").strip()
+    
+    if api_key:
+        config["api_key"] = api_key
+        print(f"✅ Custom API configured with authentication:")
+        print(f"   • Base URL: {api_base}")
+        print(f"   • Model: {config['model']}")
+        print(f"   • API Key: {'*' * (len(api_key) - 4) + api_key[-4:] if len(api_key) > 4 else '****'}")
+    else:
+        config["api_key"] = "dummy-key"  # LiteLLM requires some value
+        print(f"✅ Custom API configured without authentication:")
+        print(f"   • Base URL: {api_base}")
+        print(f"   • Model: {config['model']}")
+        print(f"   • Authentication: None")
 else:
-    # Standard providers
-    print("\n🔑 Standard API Setup:")
+    # Standard providers - API key is required
+    print("For standard providers, you need to provide API credentials.")
+    api_key = input("Enter your API key: ").strip()
+    if not api_key:
+        print("❌ API key is required for standard providers!")
+        sys.exit(1)
     
     # Detect provider based on model name
     if "gpt" in config["model"].lower() or "openai" in config["model"].lower():
@@ -456,10 +464,33 @@ if additional_keywords:
     else:
         config["keywords"] = additional_keywords
 
-# Model settings file
-model_settings = input("Path to model settings YAML file (optional): ").strip()
+# Model settings file - Auto-apply context fix for GLM models
+model_settings = input("Path to model settings YAML file (optional, press Enter for auto GLM context fix): ").strip()
+
 if model_settings and Path(model_settings).exists():
     config["model_settings"] = model_settings
+    print(f"✅ Using custom model settings: {model_settings}")
+elif "glm" in config["model"].lower():
+    # Auto-apply GLM context fix settings
+    glm_fix_file = Path("glm-context-fix.yaml")
+    if glm_fix_file.exists():
+        config["model_settings"] = str(glm_fix_file)
+        print("🛡️  Auto-applying GLM context exhaustion fix")
+        print(f"   Settings file: {glm_fix_file}")
+        print("   This prevents context window crashes by limiting output tokens")
+    else:
+        print("⚠️  GLM model detected but context fix file not found")
+        print("   Consider creating glm-context-fix.yaml for optimal performance")
+else:
+    # For other models, check if user wants to use the GLM fix anyway
+    if input("Apply context exhaustion protection? (recommended) [Y/n]: ").strip().lower() not in ['n', 'no']:
+        glm_fix_file = Path("glm-context-fix.yaml")
+        if glm_fix_file.exists():
+            config["model_settings"] = str(glm_fix_file)
+            print("🛡️  Applying context exhaustion protection")
+            print(f"   Settings file: {glm_fix_file}")
+        else:
+            print("⚠️  Context fix file not found, proceeding without protection")
 
 print(f"\n✅ Configuration:")
 for key, value in config.items():
@@ -504,14 +535,11 @@ if "model_settings" in config:
 # Join command parts
 docker_benchmark_cmd = " ".join(benchmark_cmd_parts)
 
-# For OpenAI-compatible APIs, we need to format the model name properly for litellm
+# For custom APIs, use the model name directly without any prefix
 if "api_base" in config:
     model_name = config['model']
-    if '/' not in model_name and not model_name.startswith(('gpt-', 'text-', 'davinci', 'curie', 'babbage', 'ada')):
-        # This looks like a custom model, let's try with openai/ prefix for litellm
-        print(f"🔧 Custom model detected, using openai/{model_name} format for litellm")
-        # Update the benchmark command to use the prefixed model name
-        docker_benchmark_cmd = docker_benchmark_cmd.replace(f"--model {model_name}", f"--model openai/{model_name}")
+    print(f"🔧 Custom API endpoint detected, using model name directly: {model_name}")
+    # No prefix needed for custom models - use the exact model name as provided
 
 print(f"📊 Docker command: {docker_benchmark_cmd}")
 
@@ -543,10 +571,60 @@ docker_run_cmd = [
 
 # Add API credentials to Docker environment
 if "api_base" in config:
-    # OpenAI-compatible API
+    # Custom API endpoint - use openai/ prefix to force LiteLLM to use OpenAI client
+    model_name = config['model']
+    
+    # Set OpenAI client environment variables
     docker_run_cmd.extend(["-e", f"OPENAI_API_KEY={config['api_key']}"])
     docker_run_cmd.extend(["-e", f"OPENAI_API_BASE={config['api_base']}"])
-    print(f"🔑 Using OpenAI-compatible API: {config['api_base']}")
+    
+    # Force LiteLLM to recognize this as an OpenAI model by prefixing with 'openai/'
+    # This tells LiteLLM to use the OpenAI client with your custom endpoint
+    # For model names starting with '/', create a simple alias to avoid LiteLLM processing issues
+    if model_name.startswith('/'):
+        # Create a simple alias without special characters
+        model_alias = model_name.replace('/', '_').replace('-', '_')
+        prefixed_model = f"openai/{model_alias}"
+        # Configure LiteLLM to map the alias to the actual model name
+        litellm_config = {
+            "model_list": [
+                {
+                    "model_name": model_alias,
+                    "litellm_params": {
+                        "model": model_name,
+                        "api_base": config['api_base'],
+                        "api_key": config['api_key']
+                    }
+                }
+            ]
+        }
+        # Write config to a temporary file and mount it
+        import json
+        config_content = json.dumps(litellm_config, indent=2)
+        docker_run_cmd.extend(["-e", f"LITELLM_CONFIG_JSON={config_content}"])
+    else:
+        prefixed_model = f"openai/{model_name}"
+    
+    # Update the benchmark command to use the prefixed model name
+    # Need to handle potential shell escaping issues with model names containing special characters
+    old_model_arg = f"--model {model_name}"
+    new_model_arg = f"--model {prefixed_model}"
+    docker_benchmark_cmd = docker_benchmark_cmd.replace(old_model_arg, new_model_arg)
+    
+    # Debug: Print the replacement to verify it worked
+    print(f"🔄 Model name replacement:")
+    print(f"   Original: {old_model_arg}")
+    print(f"   New: {new_model_arg}")
+    print(f"   Command updated: {'✅' if new_model_arg in docker_benchmark_cmd else '❌'}")
+    
+    # Disable model metadata lookup to prevent LiteLLM from trying to validate the model
+    docker_run_cmd.extend(["-e", "AIDER_MODEL_METADATA_FILE=/dev/null"])
+    docker_run_cmd.extend(["-e", "LITELLM_LOG=DEBUG"])
+    
+    print(f"🔑 Using custom API: {config['api_base']}")
+    print(f"🔧 Model prefixed for LiteLLM: {prefixed_model}")
+    print(f"🔄 LiteLLM will use OpenAI client with your custom endpoint")
+    print(f"🚫 Model metadata lookup disabled")
 else:
     # Standard provider
     if "env_var" in config:
