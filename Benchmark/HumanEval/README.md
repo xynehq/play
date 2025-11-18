@@ -67,37 +67,96 @@ This repository includes integrated Rust evaluation capabilities:
 
 ## Quick Start
 
-**Option 1: All-in-One Python Script (Recommended)**
+### **Option 1: Automated Setup with setup_humaneval.py** ⚡ (Recommended)
 
-Run everything with a single command:
+The easiest way to get started is using the automated setup script:
 
 ```bash
-# This will: install all dependencies, setup environment, AND run the benchmark
-python3 setup_and_run.py
+python3 setup_humaneval.py
 ```
 
-Before running, create a `.env` file with your API keys:
+**This interactive script will:**
+1. ✅ Create Python 3.7+ virtual environment
+2. ✅ Install all dependencies (numpy, requests, tqdm, etc.)
+3. ✅ Clone HumanEval repository (if needed)
+4. ✅ Copy Rust dataset to proper location
+5. ✅ Prompt for API configuration (key, base URL, models)
+6. ✅ Choose benchmark language (Rust/Python)
+7. ✅ **Automatically run the benchmark** via `run_humaneval_api.py`
+8. ✅ Save results to `result/` directory
+
+**What you need before running:**
+- Python 3.7+ installed
+- Rust toolchain (cargo) for Rust benchmarking
+- API credentials ready
+
+**Run it:**
 ```bash
-cp .env.example .env
-# Edit .env with your actual API keys (ANTHROPIC_API_KEY, etc.)
+python3 setup_humaneval.py
 ```
 
-**Option 2: Step-by-Step with Bash Script**
+The script will guide you through the setup interactively!
+
+---
+
+### **Option 2: Run Benchmark Only with run_humaneval_api.py**
+
+If your environment is already set up, use the benchmark script directly:
 
 ```bash
-# 1. Run the automated setup script (installs Rust, Python deps, etc.)
-chmod +x setup_rust_benchmark.sh
-./setup_rust_benchmark.sh
-
-# 2. Configure your API keys
-cp .env.example .env
-# Edit .env with your actual API keys
-
-# 3. Run the Rust benchmark
 python3 run_humaneval_api.py
 ```
 
-That's it! Results will be saved in the `result/` directory.
+**What it does:**
+- Loads problems from `data/humaneval-rust.jsonl.gz` (or Python dataset)
+- Generates code completions via API calls
+- Evaluates correctness by compiling and testing code
+- Calculates pass@1 and pass@10 metrics
+- Saves detailed results and logs
+
+**Prerequisites:**
+- Python environment with dependencies installed
+- Rust dataset at `data/humaneval-rust.jsonl.gz` (for Rust mode)
+- API credentials configured in the script
+- Rust toolchain installed (for Rust benchmarking)
+
+**Configuration in script:**
+```python
+# Edit these in run_humaneval_api.py:
+API_KEY = 'your-api-key'
+BASE_URL = 'https://your-api-endpoint.com'
+FINE_TUNED_MODEL = "your-model-name"
+BASE_MODEL = "base-model-name"
+LANGUAGE = "rust"  # or "python"
+```
+
+---
+
+### **Option 3: Manual Step-by-Step**
+
+If you prefer complete manual control:
+
+```bash
+# 1. Create virtual environment
+python3 -m venv venv_humaneval
+source venv_humaneval/bin/activate
+
+# 2. Install dependencies
+pip install numpy requests tqdm python-dotenv
+
+# 3. Install human_eval package
+git clone https://github.com/openai/human-eval
+pip install -e human-eval
+
+# 4. Get Rust dataset (see "Obtaining the Rust Dataset" section)
+mkdir -p data
+# Download humaneval-rust.jsonl.gz to data/
+
+# 5. Configure run_humaneval_api.py with your settings
+
+# 6. Run benchmark
+python3 run_humaneval_api.py
+```
 
 ---
 
@@ -109,15 +168,20 @@ That's it! Results will be saved in the `result/` directory.
 - **Rust toolchain** (for Rust benchmarking)
 - **API keys** (Anthropic, OpenAI, etc.)
 
-### Option 1: All-in-One Python Script (Recommended)
+### Option 1: Automated One-Command Setup + Benchmark (Recommended) ⚡
 
-Use the Python setup script for complete automation:
+Use the Python automation script:
 
 ```bash
+# Prerequisite: Create .env file with API keys
+cp .env.example .env
+# Edit .env with your actual API keys
+
+# One command does EVERYTHING:
 python3 setup_and_run.py
 ```
 
-This single command will:
+**What this does automatically:**
 - ✅ Install Rust toolchain (rustc, cargo)
 - ✅ Install Python 3 dependencies and pip
 - ✅ Install the human_eval package
@@ -125,19 +189,23 @@ This single command will:
 - ✅ Verify installation with test compilation
 - ✅ Configure environment variables
 - ✅ Create configuration templates
-- ✅ **Run the complete benchmark** (if .env file exists)
+- ✅ **Run the complete benchmark** (calls run_humaneval_api.py)
+- ✅ Save results to result/ directory
 
-### Option 2: Bash Setup Script
+**Advanced: Clone repo and automate:**
+```bash
+python3 setup_and_run.py --clone-repo https://github.com/openai/human-eval.git --clone-dir my-benchmark
+```
 
-Use the bash script for setup only (benchmark run separately):
+### Option 2: Bash Setup Script (Setup Only)
+
+Use bash script for setup only (then run benchmark manually):
 
 ```bash
 chmod +x setup_rust_benchmark.sh
 ./setup_rust_benchmark.sh
-```
 
-Then run the benchmark:
-```bash
+# Then run benchmark separately:
 python3 run_humaneval_api.py
 ```
 
@@ -171,12 +239,63 @@ pip install numpy openai tqdm anthropic
 
 ## Rust Benchmarking Setup
 
-### Dataset Requirements
+### Obtaining the Rust Dataset
 
-The Rust benchmarking requires the HumanEval Rust dataset. Place it at:
+The Rust benchmarking requires the HumanEval Rust dataset from the MultiPL-E project. Here are several ways to obtain it:
+
+#### **Method 1: Clone MultiPL-E Repository (Recommended)**
+
+```bash
+# Clone the MultiPL-E repository
+git clone https://github.com/nuprl/MultiPL-E.git
+
+# Create data directory if it doesn't exist
+mkdir -p data
+
+# Copy the Rust dataset
+cp MultiPL-E/datasets/humaneval-rs.jsonl.gz data/humaneval-rust.jsonl.gz
+
+# Verify the file
+ls -lh data/humaneval-rust.jsonl.gz
 ```
-data/humaneval-rust.jsonl.gz
+
+#### **Method 2: Direct Download**
+
+```bash
+# Create data directory
+mkdir -p data
+
+# Download directly from GitHub
+wget https://github.com/nuprl/MultiPL-E/raw/main/datasets/humaneval-rs.jsonl.gz \
+  -O data/humaneval-rust.jsonl.gz
+
+# Or using curl
+curl -L https://github.com/nuprl/MultiPL-E/raw/main/datasets/humaneval-rs.jsonl.gz \
+  -o data/humaneval-rust.jsonl.gz
+
+# Verify the file
+ls -lh data/humaneval-rust.jsonl.gz
 ```
+
+#### **Method 3: Automatic via setup_humaneval.py**
+
+The `setup_humaneval.py` script can automatically handle dataset placement:
+
+```bash
+# Run setup script
+python3 setup_humaneval.py
+
+# It will:
+# 1. Clone HumanEval repo if needed
+# 2. Copy Rust dataset from cloned repo to data/
+# 3. Verify dataset exists before running benchmark
+```
+
+### Dataset Location
+
+**Required location:** `data/humaneval-rust.jsonl.gz`
+
+The dataset must be placed in a `data/` folder in your working directory. Both `run_humaneval_api.py` and `setup_humaneval.py` expect to find it at this exact path.
 
 ### Configuration
 
@@ -214,26 +333,34 @@ python3 -c "from human_eval.evaluation import evaluate_rust_correctness; print('
 
 ## Running Benchmarks
 
-### Rust Benchmark (API-based)
+### Automated Benchmark (Recommended) ⚡
 
-Run the complete Rust benchmark using API models:
+**One command does everything:**
+
+```bash
+python3 setup_and_run.py
+```
+
+This single command will:
+1. Setup complete environment (if needed)
+2. Load Rust problems from `data/humaneval-rust.jsonl.gz`
+3. Generate completions using your configured models (fine-tuned + base)
+4. Evaluate correctness using Rust compilation and testing
+5. Calculate pass@1 and pass@10 metrics
+6. Save detailed results to `result/` directory
+
+### Manual Benchmark Run
+
+If environment is already set up, run benchmark only:
 
 ```bash
 python3 run_humaneval_api.py
 ```
 
-This will:
-1. Load Rust problems from `data/humaneval-rust.jsonl.gz`
-2. Generate completions using your configured models (fine-tuned + base)
-3. Evaluate correctness using Rust compilation and testing
-4. Calculate pass@1 and pass@10 metrics
-5. Save detailed results to `result/` directory
-
-**Output files:**
-- `result/api_finetuned_rust.jsonl` - Fine-tuned model completions
-- `result/api_base_rust.jsonl` - Base model completions  
-- `result/api_*_results.jsonl` - Evaluation results with pass/fail status
-- `result/api_rust_benchmark_results.json` - Summary metrics and comparison
+**Output files** (using model names):
+- `result/{MODEL_NAME}_rust.jsonl` - Model completions (e.g., kat-dev-hs-72b_rust.jsonl)
+- `result/{MODEL_NAME}_rust.jsonl_results.jsonl` - Evaluation results
+- `result/{MODEL_NAME}_vs_{BASE_MODEL}_rust_results.json` - Comparison summary
 
 ### Python Benchmark (Original)
 
@@ -419,31 +546,141 @@ pass@1:
 
 ---
 
+## Script Documentation
+
+### setup_humaneval.py
+
+**Purpose:** Automated one-command setup and benchmark execution
+
+**What it does:**
+1. Detects Python 3.7+ installation
+2. Creates isolated virtual environment (`venv_humaneval/`)
+3. Installs all required dependencies (numpy, requests, tqdm, etc.)
+4. Clones HumanEval repository if not present
+5. Copies Rust dataset to correct location
+6. Interactively prompts for:
+   - API Key
+   - Base URL
+   - Fine-tuned model name
+   - Base model name (optional)
+   - Benchmark language (Rust/Python)
+7. Automatically runs `run_humaneval_api.py`
+8. Saves results to `result/` directory
+
+**Usage:**
+```bash
+python3 setup_humaneval.py
+```
+
+**Interactive prompts:**
+```
+Configure API settings now? (y/n): y
+API Key: your-api-key-here
+Base URL: https://grid.ai.juspay.net
+Fine-tuned Model Name: kat-dev-hs-72b
+Base Model Name: kat-dev-base-72b
+Choose Benchmark Language: 1 (for Rust)
+```
+
+**Requirements:**
+- Python 3.7+ installed on system
+- Rust toolchain (cargo) for Rust benchmarking
+- Internet connection for cloning repo
+
+---
+
+### run_humaneval_api.py
+
+**Purpose:** Execute HumanEval benchmark via API calls
+
+**What it does:**
+1. Loads problems from dataset (`data/humaneval-rust.jsonl.gz`)
+2. Makes API calls to generate code completions
+3. For each problem, generates N samples (default: 10)
+4. Evaluates completions by:
+   - Compiling Rust code with cargo
+   - Running test suites
+   - Capturing pass/fail results
+5. Calculates pass@k metrics (pass@1, pass@10)
+6. Saves results and generates comparison reports
+7. Provides real-time logging during execution
+
+**Configuration:**
+Edit the script to set:
+```python
+# API Configuration
+API_KEY = 'your-api-key'
+BASE_URL = 'https://grid.ai.juspay.net'
+
+# Models
+FINE_TUNED_MODEL = "kat-dev-hs-72b"
+BASE_MODEL = "kat-dev-base-72b"
+
+# Settings
+LANGUAGE = "rust"  # or "python"
+```
+
+**Usage:**
+```bash
+python3 run_humaneval_api.py
+```
+
+**Output files:**
+- `result/{MODEL}_rust.jsonl` - Generated completions
+- `result/{MODEL}_rust.jsonl_results.jsonl` - Detailed results
+- `result/{MODEL}_vs_{BASE}_rust_results.json` - Comparison metrics
+- `result/logs/{MODEL}_rust_task_log.txt` - Execution log
+- `result/logs/{MODEL}_rust_realtime_log.jsonl` - Structured log
+
+**Features:**
+- Real-time progress tracking with tqdm
+- Parallel test execution (configurable workers)
+- Timeout handling for long-running tests
+- Automatic result comparison between models
+- Comprehensive error handling
+
+---
+
 ## File Structure
 
 ```
-human-eval/
-├── setup_and_run.py            # Python: Complete setup + benchmark runner (ONE COMMAND)
-├── setup_rust_benchmark.sh     # Bash: Automated setup script (setup only)
-├── run_humaneval_api.py        # Main Rust benchmarking script
-├── .env.example                # API configuration template
-├── .env                        # Your API keys (you create this)
-├── SETUP_GUIDE.md              # Detailed setup instructions
-├── README.md                   # This file
-├── human_eval/                 # Core evaluation package
-│   ├── __init__.py
-│   ├── data.py                # Dataset utilities
-│   ├── evaluation.py          # Rust evaluation functions
-│   ├── execution.py           # Code execution utilities
-│   └── evaluate_functional_correctness.py
-├── data/
-│   ├── HumanEval.jsonl.gz     # Python problems
-│   └── humaneval-rust.jsonl.gz # Rust problems
-└── result/                     # Benchmark results (auto-created)
-    ├── api_finetuned_rust.jsonl
-    ├── api_base_rust.jsonl
-    └── api_rust_benchmark_results.json
+working-directory/
+├── setup_humaneval.py          # 🚀 Automated setup + benchmark script
+├── run_humaneval_api.py        # 🔧 Benchmark execution script
+├── venv_humaneval/             # Virtual environment (created by setup_humaneval.py)
+│   ├── bin/
+│   │   ├── python
+│   │   └── pip
+│   └── lib/
+├── data/                       # Dataset directory
+│   ├── HumanEval.jsonl.gz     # Python problems (from cloned repo)
+│   └── humaneval-rust.jsonl.gz # Rust problems (required!)
+├── human-eval/                 # Cloned HumanEval repository
+│   ├── setup.py
+│   ├── README.md
+│   ├── human_eval/            # Core evaluation package
+│   │   ├── __init__.py
+│   │   ├── data.py           # Dataset utilities
+│   │   ├── evaluation.py     # Evaluation functions
+│   │   ├── execution.py      # Code execution
+│   │   └── evaluate_functional_correctness.py
+│   └── data/
+│       └── HumanEval.jsonl.gz
+└── result/                    # Results (auto-created)
+    ├── kat-dev-hs-72b_rust.jsonl
+    ├── kat-dev-hs-72b_rust.jsonl_results.jsonl
+    ├── kat-dev-hs-72b_vs_kat-dev-base-72b_rust_results.json
+    └── logs/
+        ├── kat-dev-hs-72b_rust_task_log.txt
+        └── kat-dev-hs-72b_rust_realtime_log.jsonl
 ```
+
+**Key directories:**
+- `venv_humaneval/` - Isolated Python environment
+- `data/` - Dataset storage (Rust dataset goes here!)
+- `human-eval/` - Cloned repository with evaluation code
+- `result/` - All benchmark results and logs
+
 
 ---
 
