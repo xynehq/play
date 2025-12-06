@@ -1,0 +1,40 @@
+# Benchmark Results: GLM-4.5-Air-LoRA (Whole Edit Format)
+
+## Overview
+- **Model**: openai/glm45air-lora
+- **Edit Format**: whole
+- **Date**: 2025-12-03
+- **Test Cases**: 225
+- **Aider Version**: 0.86.2.dev
+
+## Performance Metrics
+
+### Pass Rates
+- **Pass Rate 1**: 0.0% (0/225 cases)
+- **Pass Rate 2**: 0.4% (1/225 cases)
+
+### Code Quality
+- **Well-formed Responses**: 100.0%
+- **Syntax Errors**: 0
+- **Indentation Errors**: 0
+- **Malformed Responses**: 0
+- **Error Outputs**: 0
+
+### Resource Usage
+- **Prompt Tokens**: 88,254
+- **Completion Tokens**: 23,484
+- **Seconds per Case**: 34.1
+- **Test Timeouts**: 0
+- **Exhausted Context Windows**: 0
+
+### User Interaction
+- **User Asks**: 3
+- **Lazy Comments**: 0
+
+## Cost Analysis
+- **Cost per Test Case**: $0.0000
+- **Total Cost**: $0.00
+- **Projected Cost**: $0.00
+
+## Summary
+The GLM-4.5-Air-LoRA model with whole edit format achieved a 0.0% initial pass rate and 0.4% secondary pass rate across 225 test cases. Despite the very low pass rates, the model maintained excellent code quality with 100% well-formed responses and zero syntax or indentation errors. Notably, this LoRA variant was significantly faster (34.1 seconds per case) and more token-efficient (88,254 prompt tokens, 23,484 completion tokens) compared to the base GLM-4.5-Air model, while requiring minimal user intervention (only 3 user asks).

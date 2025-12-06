@@ -316,6 +316,7 @@ domain_*.jsonl
 !example_*.txt
 !anchor_instr.jsonl
 !test_dapt_integration.py
+!Benchmark/Results/**/*.json
 
 # Keep results directory and images
 !results/
@@ -406,6 +407,9 @@ models/*
 # Aider benchmark tool
 Benchmark/Polyglot/aider/
 aider/
+
+# Allow Benchmark Results to be tracked
+!Benchmark/Results/
 
 # Google Cloud SDK
 google-cloud-sdk/
