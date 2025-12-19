@@ -1,0 +1,94 @@
+# RustEvo VM Configuration
+# VM-specific settings for RustEvo benchmark integration
+
+# Repository Information
+repo:
+  name: "RustEvo"
+  url: "https://github.com/SYSUSELab/RustEvo.git"
+  description: "Rust evolution benchmark for evaluating code generation models"
+  license: "MIT"
+
+# VM Resource Limits
+resources:
+  max_memory_gb: 8
+  max_cpu_cores: 4
+  timeout_seconds: 300
+  max_concurrent_processes: 2
+
+# Model Configuration
+models:
+  default: "gpt-3.5-turbo"
+  temperature: 0.7
+  max_tokens: 2048
+  supported:
+    - "gpt-3.5-turbo"
+    - "gpt-4"
+    - "claude-3-sonnet"
+    - "claude-3-haiku"
+
+# Paths Configuration
+paths:
+  rust_evo_root: "Benchmark/RustEvo"
+  dataset: "Dataset"
+  results: "Results"
+  scripts: "Scripts"
+  evaluate: "Evaluate"
+  images: "Imgs"
+  config: "vm_config.yaml"
+
+# Execution Settings
+execution:
+  python_interpreter: "python3"
+  virtual_env: false
+  install_dependencies: true
+  cleanup_temp_files: true
+
+# Output Configuration
+output:
+  save_intermediate: true
+  verbose: true
+  log_level: "INFO"
+  log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+# Benchmark Categories
+benchmarks:
+  evaluation:
+    - "eval_models.py"
+    - "eval_models_rq1.py"
+    - "eval_models_rq3.py"
+    - "eval_RAG_models.py"
+    - "eval_RAG_rq4.py"
+  
+  analysis:
+    - "generate_code.py"
+    - "generate_test.py"
+    - "crate_analyzer.py"
+    - "rust_api_analyzer.py"
+    - "compare_stable_api.py"
+
+# Dataset Information
+datasets:
+  primary:
+    name: "RustEvo^2"
+    file: "RustEvo^2.json"
+    description: "Main Rust evolution dataset"
+  
+  api_docs:
+    name: "APIDocs"
+    file: "APIDocs.json"
+    description: "Rust API documentation dataset"
+
+# Environment Variables
+environment:
+  RUSTEVO_VM_MODE: "true"
+  RUSTEVO_CONFIG_PATH: "configs/rust_evo_config.yaml"
+  RUSTEVO_LOG_LEVEL: "INFO"
+
+# Security Settings
+security:
+  allow_network_access: false
+  sandbox_execution: true
+  restrict_file_access: true
+  allowed_directories:
+    - "Benchmark/RustEvo"
+    - "tmp"
