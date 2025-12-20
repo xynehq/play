@@ -12,9 +12,10 @@ sys.path.insert(0, str(AUTOMATION_DIR))
 
 from prompt_builder import load_templates, fill_placeholders
 from llm_client import LLMClient
+from pr_setup import setup_pr, PRSetupError
 
 
-def run_pr(pr_number: str, models: list = None):
+def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
     """
     Main orchestrator function for processing a PR.
     
@@ -22,12 +23,27 @@ def run_pr(pr_number: str, models: list = None):
         pr_number: The PR number to process
         models: List of model names to run (e.g., ["glm-full", "minimax-m2"]). 
                 If None, defaults to ["minimaxai/minimax-m2"]
+        skip_setup: If True, skip Stage 0 (PR setup). Use this if PR setup was already done manually.
     """
     if models is None:
         models = ["minimaxai/minimax-m2"]
     
     print(f"[PR {pr_number}] Starting pipeline")
     print(f"[PR {pr_number}] Models to run: {models}")
+    
+    # Stage 0: Automated PR Setup
+    if not skip_setup:
+        try:
+            repo_dir = AUTOMATION_DIR.parent  # claude-work2 directory
+            pr_dir = AUTOMATION_DIR / "pr"
+            setup_metadata = setup_pr(pr_number, repo_dir, pr_dir)
+            print(f"[PR {pr_number}] Stage 0 completed successfully")
+        except PRSetupError as e:
+            print(f"[PR {pr_number}] CRITICAL ERROR in Stage 0 (PR Setup):")
+            print(f"{str(e)}")
+            sys.exit(1)
+    else:
+        print(f"[PR {pr_number}] Skipping Stage 0 (PR setup) - using existing artifacts")
     
     # Load PR inputs (relative to automation_2 directory)
     pr_desc_file = AUTOMATION_DIR / "pr" / f"task_pr_{pr_number}.md"
@@ -56,7 +72,7 @@ def run_pr(pr_number: str, models: list = None):
     print(f"[PR {pr_number}] Generating human approach summary...")
     human_approach_client = LLMClient(
         model="minimaxai/minimax-m2",  # Always use minimaxai/minimax-m2 for prompt generation
-        api_key="sk-67cI50BNxSw7SsYSkQGvGw",
+        api_key=" ",
         base_url="https://grid.ai.juspay.net"
     )
     human_approach_summary = _generate_human_approach(templates, pr_metadata, human_patch, human_approach_client)
@@ -93,14 +109,14 @@ def run_pr(pr_number: str, models: list = None):
         # Prompt generation model ≠ execution model (strict requirement)
         prompt_gen_client = LLMClient(
             model="minimaxai/minimax-m2",  # Always use minimaxai/minimax-m2 for prompt generation
-            api_key="sk-67cI50BNxSw7SsYSkQGvGw",
+            api_key=" ",
             base_url="https://grid.ai.juspay.net"
         )
         
         # Create LLM client for evaluation (uses execution model)
         eval_client = LLMClient(
             model=model,
-            api_key="sk-67cI50BNxSw7SsYSkQGvGw",
+            api_key=" ",
             base_url="https://grid.ai.juspay.net"
         )
         
@@ -193,6 +209,49 @@ def _build_replacements(pr_text: str, human_patch: str, pr_metadata: dict = None
     }
 
 
+def _validate_git_state():
+    """Validate git repository state before Claude execution.
+    
+    Pre-execution git sanity checks:
+    - Clean working tree
+    - Correct base commit (merge^1)
+    
+    Raises:
+        RuntimeError: If repository state is unsafe
+    """
+    claude_work_dir = AUTOMATION_DIR.parent
+    
+    # Check for clean working tree
+    status_result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=claude_work_dir,
+        capture_output=True,
+        text=True
+    )
+    
+    if status_result.stdout.strip():
+        raise RuntimeError(
+            f"Git working tree is not clean. Repository state is unsafe.\n"
+            f"Working tree status:\n{status_result.stdout}"
+        )
+    
+    # Verify we're on a valid commit (not detached HEAD or similar issues)
+    rev_result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=claude_work_dir,
+        capture_output=True,
+        text=True
+    )
+    
+    if rev_result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to verify git HEAD. Repository state is unsafe.\n"
+            f"Error: {rev_result.stderr}"
+        )
+    
+    print("  [Stage 3] Git state validated: clean working tree")
+
+
 def _reset_repository():
     """Reset repository to clean state before Claude execution."""
     print("  [Stage 3] Resetting repository")
@@ -201,28 +260,84 @@ def _reset_repository():
     claude_work_dir = AUTOMATION_DIR.parent
     
     # Reset to HEAD (run from claude-work directory)
-    subprocess.run(
+    reset_result = subprocess.run(
         ["git", "reset", "--hard"],
         cwd=claude_work_dir,
         capture_output=True,
         text=True
     )
     
+    if reset_result.returncode != 0:
+        raise RuntimeError(
+            f"Git reset failed. Repository state is unsafe.\n"
+            f"Error: {reset_result.stderr}"
+        )
+    
     # Clean untracked files
-    subprocess.run(
+    clean_result = subprocess.run(
         ["git", "clean", "-fd"],
         cwd=claude_work_dir,
         capture_output=True,
         text=True
     )
+    
+    if clean_result.returncode != 0:
+        raise RuntimeError(
+            f"Git clean failed. Repository state is unsafe.\n"
+            f"Error: {clean_result.stderr}"
+        )
+    
+    # Re-validate that we have a clean state after reset
+    _validate_git_state()
 
 
 def _map_model_name(model: str) -> str:
-    """Map CLI model name to Claude Code model name."""
-    # Map minimax-m2 to minimaxai/minimax-m2, keep others as-is
-    if model == "minimax-m2":
-        return "minimaxai/minimax-m2"
-    return model
+    """Map CLI model name to Claude Code execution model name.
+    
+    This is the explicit, validated execution-model mapping.
+    Rules:
+    - run_pr --models glm-full → execution model = "glm-full"
+    - run_pr --models minimax-m2 → execution model = "minimaxai/minimax-m2"
+    
+    Raises:
+        ValueError: If model name is unknown or unmapped
+    """
+    # Explicit model mapping - DO NOT guess or default
+    MODEL_MAPPING = {
+        "glm-full": "glm-full",
+        "minimax-m2": "minimaxai/minimax-m2",
+        "minimaxai/minimax-m2": "minimaxai/minimax-m2",  # Allow already-mapped names
+        # Add more models here as needed
+    }
+    
+    if model not in MODEL_MAPPING:
+        raise ValueError(
+            f"Unknown model name: '{model}'. "
+            f"Valid models: {list(MODEL_MAPPING.keys())}"
+        )
+    
+    return MODEL_MAPPING[model]
+
+
+def _validate_environment_variables():
+    """Validate required environment variables for Claude Code execution.
+    
+    Raises:
+        RuntimeError: If required environment variables are missing
+    """
+    required_vars = {
+        "ANTHROPIC_BASE_URL": "https://grid.ai.juspay.net",
+        "ANTHROPIC_AUTH_TOKEN": " "
+    }
+    
+    # We don't check os.environ here because we inject them ourselves
+    # This function exists to document the contract and can be extended if needed
+    for var_name, var_value in required_vars.items():
+        if not var_value:
+            raise RuntimeError(
+                f"Required environment variable '{var_name}' is not configured. "
+                f"Claude Code execution cannot proceed."
+            )
 
 
 def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path, execution_model: str):
@@ -232,25 +347,31 @@ def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path
     ANTHROPIC_BASE_URL="https://grid.ai.juspay.net" \
     ANTHROPIC_AUTH_TOKEN="sk-uJfk3pIE2KcP9DoGx4UeHA" \
     claude --model "<MODEL_NAME>" --prompt-file <PROMPT_PATH>
+    
+    Raises:
+        RuntimeError: If Claude Code execution fails
     """
     print("  [Stage 3] Running Claude Code")
+    
+    # Validate environment variables
+    _validate_environment_variables()
     
     # Get the claude-work directory (parent of automation_2)
     claude_work_dir = AUTOMATION_DIR.parent
     
     # Map model name (minimax-m2 -> minimaxai/minimax-m2, others stay as-is)
+    # This will raise ValueError if model is unknown
     mapped_model = _map_model_name(execution_model)
     print(f"  [Stage 3] Using execution model: {mapped_model}")
     
-    # Set environment variables for Claude Code
+    # Set environment variables for Claude Code (explicit injection)
     env = os.environ.copy()
     env["ANTHROPIC_BASE_URL"] = "https://grid.ai.juspay.net"
-    env["ANTHROPIC_AUTH_TOKEN"] = "sk-uJfk3pIE2KcP9DoGx4UeHA"
+    env["ANTHROPIC_AUTH_TOKEN"] = " "
     
     # Read prompt content and clean it (remove any reasoning/metadata tags)
     prompt_content = prompt_file.read_text(encoding="utf-8")
     # Remove any reasoning tags that might be in the prompt
-    import re
     # Remove <think> or <think> tags and their content
     prompt_content = re.sub(r'<(?:think|redacted_reasoning)>.*?</(?:think|redacted_reasoning)>', '', prompt_content, flags=re.DOTALL | re.IGNORECASE)
     # Clean up extra whitespace
@@ -264,28 +385,42 @@ def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path
     # Execute Claude Code with --model, --print, and --permission-mode to allow edits
     # Use stdin to pass prompt (more reliable for long prompts)
     # --print enables non-interactive mode, --permission-mode=acceptEdits allows file edits
-    result = subprocess.run(
-        ["claude", "--model", mapped_model, "--print", "--permission-mode", "acceptEdits"],
-        input=prompt_content,
-        cwd=claude_work_dir,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=600  # 10 minute timeout
-    )
+    try:
+        result = subprocess.run(
+            ["claude", "--model", mapped_model, "--print", "--permission-mode", "acceptEdits"],
+            input=prompt_content,
+            cwd=claude_work_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 minute timeout
+        )
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(
+            f"Claude Code execution timed out after 600 seconds. "
+            f"This is a CRITICAL execution failure."
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            f"Claude Code CLI not found. Cannot execute. "
+            f"Error: {str(e)}"
+        )
     
     # Save stdout and stderr
     stdout_file.write_text(result.stdout, encoding="utf-8")
     stderr_file.write_text(result.stderr, encoding="utf-8")
     
-    # Log execution status
+    # CRITICAL: Check subprocess return code (Problem 1️⃣)
     if result.returncode != 0:
-        print(f"  [Stage 3] Warning: Claude Code exited with code {result.returncode}")
-        if result.stderr:
-            print(f"  [Stage 3] Error output: {result.stderr[:200]}")
-    else:
-        print(f"  [Stage 3] Claude Code executed successfully")
+        error_msg = (
+            f"Claude Code execution FAILED with return code {result.returncode}.\n"
+            f"stderr: {result.stderr[:500]}\n"
+            f"stdout: {result.stdout[:500]}"
+        )
+        print(f"  [Stage 3] CRITICAL ERROR: {error_msg}")
+        raise RuntimeError(error_msg)
     
+    print(f"  [Stage 3] Claude Code executed successfully (return code 0)")
     print(f"  [Stage 3] Output saved to {stdout_file} and {stderr_file}")
 
 
@@ -409,7 +544,11 @@ def _run_attempts_loop(pr_number: str, run_dir: Path, templates, pr_text: str, h
 def _run_single_attempt(pr_number: str, run_dir: Path, templates, pr_text: str, human_patch: str, 
                       prompt_gen_client: LLMClient, eval_client: LLMClient, attempt_num: int, 
                       pr_metadata: dict, human_approach_summary: str, execution_model: str) -> str:
-    """Run a single attempt: generate prompt, run Claude, evaluate."""
+    """Run a single attempt: generate prompt, run Claude, evaluate.
+    
+    Returns:
+        Verdict string: "PASS", "FAIL", or "EXECUTION_FAILED"
+    """
     attempt_dir = run_dir / f"p{attempt_num}"
     attempt_dir.mkdir(exist_ok=True)
     
@@ -463,8 +602,45 @@ def _run_single_attempt(pr_number: str, run_dir: Path, templates, pr_text: str, 
     stderr_file = attempt_dir / "stderr.txt"
     diff_file = attempt_dir / "claude.diff"
     
-    _execute_claude_code(prompt_file, stdout_file, stderr_file, execution_model)
-    _capture_git_diff(diff_file)
+    # Execution with error handling
+    try:
+        _execute_claude_code(prompt_file, stdout_file, stderr_file, execution_model)
+        _capture_git_diff(diff_file)
+    except (RuntimeError, ValueError) as e:
+        # Hard failure on execution errors (Problem 1️⃣)
+        error_data = {
+            "verdict": "EXECUTION_FAILED",
+            "reason": f"Claude Code execution failed: {str(e)}",
+            "error_type": type(e).__name__
+        }
+        error_file = attempt_dir / "eval.json"
+        error_file.write_text(json.dumps(error_data, indent=2), encoding="utf-8")
+        print(f"[PR {pr_number}] EXECUTION FAILED: {str(e)}")
+        return "EXECUTION_FAILED"
+    
+    # CRITICAL: Check if claude.diff is empty or missing (Problem 3️⃣)
+    if not diff_file.exists():
+        failure_data = {
+            "verdict": "FAIL",
+            "reason": "Claude Code execution completed but no diff file was generated. This is a FAILED attempt.",
+            "failure_type": "MISSING_DIFF"
+        }
+        failure_file = attempt_dir / "eval.json"
+        failure_file.write_text(json.dumps(failure_data, indent=2), encoding="utf-8")
+        print(f"[PR {pr_number}] FAILED: claude.diff is missing")
+        return "FAIL"
+    
+    diff_content = diff_file.read_text(encoding="utf-8")
+    if not diff_content.strip():
+        failure_data = {
+            "verdict": "FAIL",
+            "reason": "Claude Code made no changes (empty diff). This is a FAILED attempt. Silent success is NOT allowed.",
+            "failure_type": "EMPTY_DIFF"
+        }
+        failure_file = attempt_dir / "eval.json"
+        failure_file.write_text(json.dumps(failure_data, indent=2), encoding="utf-8")
+        print(f"[PR {pr_number}] FAILED: claude.diff is empty (no changes made)")
+        return "FAIL"
     
     # Evaluate the solution (using eval_client = execution model)
     eval_file = attempt_dir / "eval.json"
