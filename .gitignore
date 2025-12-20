@@ -402,3 +402,4 @@ yarn-error.log*
 
 models/*
 !models/.gitkeep
+Claude_code_task/.gitignore

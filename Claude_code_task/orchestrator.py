@@ -72,7 +72,7 @@ def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
     print(f"[PR {pr_number}] Generating human approach summary...")
     human_approach_client = LLMClient(
         model="minimaxai/minimax-m2",  # Always use minimaxai/minimax-m2 for prompt generation
-        api_key="sk-67cI50BNxSw7SsYSkQGvGw",
+        api_key=" ",
         base_url="https://grid.ai.juspay.net"
     )
     human_approach_summary = _generate_human_approach(templates, pr_metadata, human_patch, human_approach_client)
@@ -109,14 +109,14 @@ def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
         # Prompt generation model ≠ execution model (strict requirement)
         prompt_gen_client = LLMClient(
             model="minimaxai/minimax-m2",  # Always use minimaxai/minimax-m2 for prompt generation
-            api_key="sk-67cI50BNxSw7SsYSkQGvGw",
+            api_key=" ",
             base_url="https://grid.ai.juspay.net"
         )
         
         # Create LLM client for evaluation (uses execution model)
         eval_client = LLMClient(
             model=model,
-            api_key="sk-67cI50BNxSw7SsYSkQGvGw",
+            api_key=" ",
             base_url="https://grid.ai.juspay.net"
         )
         
@@ -327,7 +327,7 @@ def _validate_environment_variables():
     """
     required_vars = {
         "ANTHROPIC_BASE_URL": "https://grid.ai.juspay.net",
-        "ANTHROPIC_AUTH_TOKEN": "sk-uJfk3pIE2KcP9DoGx4UeHA"
+        "ANTHROPIC_AUTH_TOKEN": " "
     }
     
     # We don't check os.environ here because we inject them ourselves
@@ -367,7 +367,7 @@ def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path
     # Set environment variables for Claude Code (explicit injection)
     env = os.environ.copy()
     env["ANTHROPIC_BASE_URL"] = "https://grid.ai.juspay.net"
-    env["ANTHROPIC_AUTH_TOKEN"] = "sk-uJfk3pIE2KcP9DoGx4UeHA"
+    env["ANTHROPIC_AUTH_TOKEN"] = " "
     
     # Read prompt content and clean it (remove any reasoning/metadata tags)
     prompt_content = prompt_file.read_text(encoding="utf-8")

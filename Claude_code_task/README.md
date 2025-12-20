@@ -752,6 +752,53 @@ prompt_gen_client = LLMClient(
 
 ---
 
+### Issue: Branch Already Exists
+
+**Symptoms**: Stage 0 fails with "Branch 'test-claude-pr-XXXX' already exists"
+
+**Cause**: The branch was created in a previous run and wasn't cleaned up
+
+**Fix**: Delete the existing branch and re-run:
+```bash
+cd /path/to/claude-work
+
+# If the branch is currently checked out, checkout another branch first
+git checkout main  # or any other branch
+
+# Delete the test branch
+git branch -D test-claude-pr-9298
+
+# Re-run automation
+./automation_2/run_pr 9298 --models minimax-m2
+```
+
+**Alternative**: Use `--skip-setup` if PR setup was already completed:
+```bash
+# Branch already exists but setup is done
+./automation_2/run_pr 9298 --models minimax-m2 --skip-setup
+```
+
+---
+
+### Issue: Cannot Delete Branch (Worktree In Use)
+
+**Symptoms**: `error: cannot delete branch 'test-claude-pr-XXXX' used by worktree`
+
+**Cause**: You're currently on the branch you're trying to delete
+
+**Fix**: Switch to a different branch first:
+```bash
+cd /path/to/claude-work
+
+# Check current branch
+git branch --show-current
+
+# If on test-claude-pr-XXXX, use --skip-setup instead
+./automation_2/run_pr 9298 --models minimax-m2 --skip-setup
+```
+
+---
+
 ### Issue: Git Reset Not Working
 
 **Symptoms**: Previous attempt's changes persist
