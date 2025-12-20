@@ -21,6 +21,7 @@ import json
 import datetime
 from pathlib import Path
 import shutil
+import yaml
 
 # -----------------------------------------------------------------------------
 # PREREQUISITES CHECK - Run before anything else
@@ -233,6 +234,25 @@ else:
     print("🔄 Updating repository...")
     run(["git", "pull"], cwd=str(aider_dir))
 
+# Patch requirements.txt to use compatible litellm version
+requirements_path = aider_dir / "requirements.txt"
+if requirements_path.exists():
+    print("🔧 Patching requirements.txt to use litellm<1.53 for compatibility...")
+    requirements_content = requirements_path.read_text()
+    
+    # Replace any litellm line with litellm<1.53
+    import re
+    modified_requirements = re.sub(
+        r'^litellm[>=<\d.\s]*$',
+        'litellm<1.53',
+        requirements_content,
+        flags=re.MULTILINE
+    )
+    
+    requirements_path.write_text(modified_requirements)
+    print("✅ requirements.txt patched successfully")
+    print("   Changed: litellm version → litellm<1.53")
+
 # Create benchmarks directory
 benchmarks_dir = aider_dir / "tmp.benchmarks"
 benchmarks_dir.mkdir(exist_ok=True)
@@ -339,131 +359,121 @@ config = {
 # Interactive configuration
 print("⚙️  Benchmark Configuration")
 print("=" * 40)
+config_path = Path(Path(__file__).parent.parent / "model_config.yaml")
+config_file = Path(config_path)
+with open(config_file, 'r') as f:
+    yaml_data = yaml.safe_load(f)
+    print("\n🤖 Model Configuration:")
+    print("Enter the model name you want to benchmark.")
+    config["model"]=yaml_data.get("model_name")
+    if not config["model"]:
+        print("❌ Model name is required!")
+        sys.exit(1)
 
-# Model selection - ask user for custom model
-print("\n🤖 Model Configuration:")
-print("Enter the model name you want to benchmark.")
-print("Examples: gpt-4, gpt-3.5-turbo, claude-3.5-sonnet, etc.")
-config["model"] = input("Model name: ").strip()
+    # API Configuration
+    print("\n🔑 API Configuration:")
+    # Get API base URL (optional for standard OpenAI)
+    api_base = yaml_data.get("api_base", "").strip()
+    # Get API key
+    api_key = yaml_data.get("api_key", "abc").strip()
+    if not api_key:
+        print("❌ API key is required!")
+        sys.exit(1)
 
-if not config["model"]:
-    print("❌ Model name is required!")
-    sys.exit(1)
-
-# API Configuration
-print("\n🔑 API Configuration:")
-print("For the benchmark to work, you need to provide API credentials.")
-
-# Get API base URL (optional for standard OpenAI)
-api_base = input("Enter your API base URL (leave empty for standard OpenAI, e.g., https://api.your-provider.com/v1): ").strip()
-
-# Get API key
-api_key = input("Enter your API key: ").strip()
-if not api_key:
-    print("❌ API key is required!")
-    sys.exit(1)
-
-if api_base:
-    # Custom API endpoint
-    config["api_base"] = api_base
-    config["api_key"] = api_key
-    
-    print(f"✅ Custom API configured:")
-    print(f"   • Base URL: {api_base}")
-    print(f"   • Model: {config['model']}")
-    print(f"   • API Key: {'*' * (len(api_key) - 4) + api_key[-4:] if len(api_key) > 4 else '****'}")
-else:
-    # Standard providers
-    print("\n🔑 Standard API Setup:")
-    
-    # Detect provider based on model name
-    if "gpt" in config["model"].lower() or "openai" in config["model"].lower():
-        provider = "OpenAI"
-        env_var = "OPENAI_API_KEY"
-    elif "claude" in config["model"].lower() or "anthropic" in config["model"].lower():
-        provider = "Anthropic"
-        env_var = "ANTHROPIC_API_KEY"
-    elif "gemini" in config["model"].lower() or "google" in config["model"].lower():
-        provider = "Google"
-        env_var = "GOOGLE_API_KEY"
+    if api_base:
+        # Custom API endpoint
+        config["api_base"] = api_base
+        config["api_key"] = api_key
+        
+        print(f"✅ Custom API configured:")
+        print(f"   • Base URL: {api_base}")
+        print(f"   • Model: {config['model']}")
+        print(f"   • API Key: {'*' * (len(api_key) - 4) + api_key[-4:] if len(api_key) > 4 else '****'}")
     else:
-        provider = "OpenAI (default)"
-        env_var = "OPENAI_API_KEY"
-    
-    config["api_key"] = api_key
-    config["env_var"] = env_var
-    
-    print(f"✅ API key configured for {provider}")
-    print(f"   • Key: {'*' * (len(api_key) - 4) + api_key[-4:] if len(api_key) > 4 else '****'}")
+        # Standard providers
+        print("\n🔑 Standard API Setup:")
+        
+        # Detect provider based on model name
+        if "gpt" in config["model"].lower() or "openai" in config["model"].lower():
+            provider = "OpenAI"
+            env_var = "OPENAI_API_KEY"
+        elif "claude" in config["model"].lower() or "anthropic" in config["model"].lower():
+            provider = "Anthropic"
+            env_var = "ANTHROPIC_API_KEY"
+        elif "gemini" in config["model"].lower() or "google" in config["model"].lower():
+            provider = "Google"
+            env_var = "GOOGLE_API_KEY"
+        else:
+            provider = "OpenAI (default)"
+            env_var = "OPENAI_API_KEY"
+        
+        config["api_key"] = api_key
+        config["env_var"] = env_var
+        
+        print(f"✅ API key configured for {provider}")
+        print(f"   • Key: {'*' * (len(api_key) - 4) + api_key[-4:] if len(api_key) > 4 else '****'}")
 
-# Edit format selection
-print("\n✏️  Edit Format:")
-print("1. whole (default - replace entire file)")
-print("2. diff (generate diffs)")
-print("3. udiff (unified diffs)")
+    # Edit format selection
+    print("\n✏️  Edit Format:")
+    bench = yaml_data.get("benchmark", {})
 
-edit_choice = input("Choose edit format (1-3, default: 1): ").strip() or "1"
-if edit_choice == "2":
-    config["edit_format"] = "diff"
-elif edit_choice == "3":
-    config["edit_format"] = "udiff"
-
+    config["edit_format"]=bench.get("edit_format","whole")
 # Thread configuration
-threads_input = input(f"Number of parallel threads (default: {config['threads']}): ").strip()
-if threads_input:
-    config["threads"] = int(threads_input)
+    threads_input = bench.get("threads","10")
+    if threads_input:
+        config["threads"] = int(threads_input)
 
 # Number of tests
-num_tests = input("Number of tests to run (default: all): ").strip()
-if num_tests:
-    config["num_tests"] = int(num_tests)
+    num_tests = bench.get("num_tests", "")
+    if num_tests:
+        config["num_tests"] = int(num_tests)
 
-# Language selection
-print("\n🌐 Language Selection:")
-print("Choose which programming language to test:")
-print("1. All languages (default)")
-print("2. C++")
-print("3. Go")
-print("4. Java")
-print("5. JavaScript")
-print("6. Python")
-print("7. Rust")
+    # Language selection
+    print("\n🌐 Language Selection:")
+    print("Choose which programming language to test:")
+    print("1. All languages (default)")
+    print("2. C++")
+    print("3. Go")
+    print("4. Java")
+    print("5. JavaScript")
+    print("6. Python")
+    print("7. Rust")
 
-language_choice = input("Choose option (1-7, default: 1): ").strip() or "1"
+    language_choice = bench.get("language","1").strip()
 
-# Map language choices to directory names
-language_map = {
-    "2": "cpp",
-    "3": "go", 
-    "4": "java",
-    "5": "javascript",
-    "6": "python",
-    "7": "rust",
-}
+    # Map language choices to directory names
+    language_map = {
+        "2": "cpp",
+        "3": "go", 
+        "4": "java",
+        "5": "javascript",
+        "6": "python",
+        "7": "rust",
+    }
 
-if language_choice in language_map:
-    selected_lang = language_map[language_choice]
-    config["keywords"] = selected_lang
-    print(f"✅ Selected language: {selected_lang}")
-else:
-    print("✅ Using all languages")
-
-# Additional keywords filter
-additional_keywords = input("Additional keyword filter (optional): ").strip()
-if additional_keywords:
-    if "keywords" in config:
-        config["keywords"] = f"{config['keywords']}.*{additional_keywords}"
+    if language_choice in language_map:
+        selected_lang = language_map[language_choice]
+        config["keywords"] = selected_lang
+        print(f"✅ Selected language: {selected_lang}")
     else:
-        config["keywords"] = additional_keywords
+        print("✅ Using all languages")
 
-# Model settings file
-model_settings = input("Path to model settings YAML file (optional): ").strip()
-if model_settings and Path(model_settings).exists():
-    config["model_settings"] = model_settings
+    # Additional keywords filter
+    additional_keywords = yaml_data.get("keywords", "").strip()
+    if additional_keywords:
+        if "keywords" in config:
+            config["keywords"] = f"{config['keywords']}.*{additional_keywords}"
+        else:
+            config["keywords"] = additional_keywords
 
-print(f"\n✅ Configuration:")
-for key, value in config.items():
-    print(f"   {key}: {value}")
+    # Model settings file
+    model_settings = bench.get("model_settings", "").strip()
+    if model_settings and Path(model_settings).exists():
+        config["model_settings"] = model_settings
+
+    print(f"\n✅ Configuration:")
+    for key, value in config.items():
+        print(f"   {key}: {value}")
 
 # -----------------------------------------------------------------------------
 # Step 5: Run Benchmark
