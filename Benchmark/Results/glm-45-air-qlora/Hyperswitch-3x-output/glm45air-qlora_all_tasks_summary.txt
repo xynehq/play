@@ -1,0 +1,48 @@
+
+================================================================================
+📊 EVALUATION SUMMARY
+================================================================================
+
+✅ Total Items Evaluated: 263
+📝 Evaluation Mode: Triple-Output Evaluation (3 outputs per datapoint)
+
+================================================================================
+🔄 TRIPLE-OUTPUT EVALUATION RESULTS
+================================================================================
+
+📋 Breakdown by Task Type:
+
+  📂 code_debugging (65 items)
+     • Average Score:      0.762
+     • Std Deviation:      0.203
+     • Min Score:          0.200
+     • Max Score:          0.996
+
+  📂 code_generation (102 items)
+     • Average Score:      0.664
+     • Std Deviation:      0.212
+     • Min Score:          0.245
+     • Max Score:          1.000
+
+  📂 code_understanding (96 items)
+     • Average Score:      0.678
+     • Std Deviation:      0.138
+     • Min Score:          0.250
+     • Max Score:          0.904
+
+================================================================================
+🎯 OVERALL TRIPLE-OUTPUT RESULTS
+================================================================================
+Average Score Across All Items:  0.693
+Standard Deviation:              0.190
+Minimum Average Score:           0.200
+Maximum Average Score:           1.000
+
+📈 Performance Distribution:
+   High Performance (≥0.8):     91/263 (34.6%)
+   Good Performance (0.6-0.8):  90/263 (34.2%)
+   Fair Performance (0.4-0.6):  65/263 (24.7%)
+   Poor Performance (<0.4):     17/263 (6.5%)
+
+📊 Model shows moderate consistency across outputs.
+================================================================================
