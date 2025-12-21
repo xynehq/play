@@ -1,0 +1,62 @@
+
+================================================================================
+📊 EVALUATION SUMMARY
+================================================================================
+
+✅ Total Items Evaluated: 235
+📝 Evaluation Mode: Dual-Model Comparison
+
+================================================================================
+🤖 DUAL-OUTPUT COMPARISON RESULTS
+================================================================================
+
+📋 Breakdown by Task Type:
+
+  📂 code_debugging (65 items)
+     • Output 1 Avg Score: 0.731
+     • Output 2 Avg Score: 0.687
+     • Difference:         -0.044
+     • Wins: O1=32, O2=30, Ties=3
+
+  📂 code_generation (74 items)
+     • Output 1 Avg Score: 0.625
+     • Output 2 Avg Score: 0.703
+     • Difference:         +0.078
+     • Wins: O1=20, O2=43, Ties=11
+
+  📂 code_understanding (96 items)
+     • Output 1 Avg Score: 0.674
+     • Output 2 Avg Score: 0.712
+     • Difference:         +0.038
+     • Wins: O1=22, O2=56, Ties=18
+
+================================================================================
+🎯 OVERALL COMPARISON
+================================================================================
+Output 1 Average Score:  0.674
+Output 2 Average Score:  0.702
+Average Difference:      +0.028
+
+🏆 Win Record:
+   Output 1 Wins:    74/235 (31.5%)
+   Output 2 Wins:    129/235 (54.9%)
+   Ties:             32/235 (13.6%)
+
+✨ Output 2 performs better overall!
+
+================================================================================
+📁 BREAKDOWN BY CATEGORY
+================================================================================
+
+  repo_specific (168 items):
+     Difference: +0.033
+     Wins: O1=47, O2=89
+
+  generic (62 items):
+     Difference: +0.013
+     Wins: O1=24, O2=29
+
+  complex_logic (5 items):
+     Difference: +0.050
+     Wins: O1=1, O2=4
+================================================================================
