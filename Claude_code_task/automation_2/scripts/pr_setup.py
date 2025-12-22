@@ -63,8 +63,12 @@ def setup_pr(pr_number: str, repo_dir: Path, pr_dir: Path) -> dict:
     diff_file = pr_dir / "original_changes.diff"
     _generate_ground_truth_diff(base_commit, merge_commit, diff_file, repo_dir)
     
+    # Step 7: Save merge commit for context diff generation
+    merge_commit_file = pr_dir / f"merge_commit_{pr_number}.txt"
+    _save_merge_commit(merge_commit, merge_commit_file)
+    
     # Verify outputs exist
-    _verify_outputs(task_file, diff_file)
+    _verify_outputs(task_file, diff_file, merge_commit_file)
     
     # Verify clean git state
     _verify_clean_state(repo_dir)
@@ -351,7 +355,23 @@ def _generate_ground_truth_diff(base_commit: str, merge_commit: str, diff_file: 
     print(f"[Stage 0] ✓ Ground-truth diff generated ({diff_lines} lines)")
 
 
-def _verify_outputs(task_file: Path, diff_file: Path):
+def _save_merge_commit(merge_commit: str, merge_commit_file: Path):
+    """
+    Save merge commit hash to file for later context diff generation.
+    
+    This file is used by the orchestrator to generate human context diffs.
+    """
+    print(f"[Stage 0] Saving merge commit to {merge_commit_file.name}")
+    
+    # Ensure pr/ directory exists
+    merge_commit_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Save merge commit hash
+    merge_commit_file.write_text(merge_commit, encoding="utf-8")
+    print(f"[Stage 0] ✓ Merge commit saved")
+
+
+def _verify_outputs(task_file: Path, diff_file: Path, merge_commit_file: Path):
     """Verify required outputs exist and are non-empty."""
     print(f"[Stage 0] Verifying outputs...")
     
@@ -361,11 +381,17 @@ def _verify_outputs(task_file: Path, diff_file: Path):
     if not diff_file.exists():
         raise PRSetupError(f"Diff file not found: {diff_file}")
     
+    if not merge_commit_file.exists():
+        raise PRSetupError(f"Merge commit file not found: {merge_commit_file}")
+    
     if not task_file.read_text(encoding="utf-8").strip():
         raise PRSetupError(f"Task file is empty: {task_file}")
     
     if not diff_file.read_text(encoding="utf-8").strip():
         raise PRSetupError(f"Diff file is empty: {diff_file}")
+    
+    if not merge_commit_file.read_text(encoding="utf-8").strip():
+        raise PRSetupError(f"Merge commit file is empty: {merge_commit_file}")
     
     print(f"[Stage 0] ✓ All outputs verified")
 

@@ -26,7 +26,9 @@ Description (from PR):
 
 ===== INSTRUCTIONS =====
 Write a single 4-5 line paragraph that explains, at a conceptual level, what the human developer understood about the issue and how they approached fixing it. Avoid all low-level or code-specific details.
+
 ——————————————Prompt to get First Prompt:————————————
+
 ## [PROMPT_1]
 You are helping me design a high-quality coding instruction for Claude Code. Claude Code is an agentic coding tool in the terminal that understands the codebase.
 Goal: Given only the buggy codebase (one commit before the real fix), we want Claude Code to implement a correction/solution that mirrors the real human solution. The final fix does not need to match line-for-line, but it must follow the same logic, produce the same behavior, and avoid introducing any new or unintended side effects.
@@ -64,62 +66,106 @@ You are helping me iteratively improve a prompt for Claude Code. Claude Code is 
 	3	Emphasize that it should focus more precisely on the intended behavior and correct overall logic, while staying within the relevant area of the codebase.
 	4	Avoid explicit file paths, symbols, code, patches, or human approach details.
 	5	Output ONLY the new 4–5 line paragraph prompt, with no commentary or markdown.
-———————————————Summarize Claude Code's approach, compare with real changes, and decide Pass/Fail———————————
-## [EVALUATION]
-You are an expert code reviewer benchmarked against a known "ground truth" fix.
-I will give you:
-The PR title.
-The related Issue description.
-A high-level human approach summary derived from the real merged PR.
-The real ground-truth git diff.
-The git diff produced by Claude Code for the same task. Claude Code is an agentic coding tool in the terminal that understands the codebase.
-Your job is to:
-Produce a single 4–5 line Summary paragraph describing what the model tried to do and how it compares to the real fix.
-Decide PASS or FAIL according to the benchmark rules below.
 
-===== BENCHMARK RULES =====
-PASS when:
-The model's changes are logically equivalent, semantically aligned, or follow the same intent as the human fix based on the PR title, issue, and human approach summary.
-The model is clearly on the right track, even if some names, struct shapes, or small details differ.
-Any differences are minor refactors, stylistic differences, or harmless omissions.
-The model does not introduce unrelated or harmful behavior.
-If the human diff includes changes that are:
-renames,
-cleanup,
-refactors,
-small behavior tweaks unrelated to the PR title/issue/human-approach summary,
-then do NOT mark those as missing—these are irrelevant for evaluation.
-FAIL when:
-The model's changes do not solve the core problem described by the PR title/issue/human-approach summary.
-The model uses a different strategy that does not actually address the bug.
-The model introduces incorrect, dangerous, or invalid behavior.
-The model misses the core fix logic required by the PR title/issue.
-If unsure, lean toward FAIL, but do NOT penalize harmless or unrelated differences.
-Important evaluation clarification
-Only compare overlapping, relevant portions of the diff.
-If the human diff includes changes not implied by the PR title/issue/human approach (drive-by cleanups, renames, unrelated tweaks),
-ignore them—they should NOT affect the verdict.
-Evaluate only the core change described by the PR title, issue, and human approach summary.
+———————————————Summarize Claude Code's approach, compare with real changes, and decide Pass/Fail———————————
+
+## [EVALUATION]
+
+You are a senior Hyperswitch engineer evaluating a model-generated fix against a known correct human fix.
+
+You are given:
+- PR title and issue description
+- A human-written approach summary (supporting context only)
+- Function-level context diffs for BOTH the human fix and the model fix
+- Raw git diffs for reference only
+
+Claude Code is an agentic coding tool that attempted to fix the issue.
+
+===== EVALUATION PRINCIPLES =====
+
+CRITICAL RULE:
+The HUMAN_CONTEXT_DIFF is the absolute ground truth.
+It defines the required behavior, propagation, and structure.
+The MODEL_CONTEXT_DIFF must be evaluated strictly relative to it.
+
+Human approach summaries and PR descriptions provide background context only.
+They must NOT override or excuse missing behavior in the human context diff.
+
+Context diffs operate at the function / logical-flow level.
+Ignore formatting, ordering, refactors, naming, and whitespace.
+Do NOT reason line-by-line.
+
+Raw diffs are reference-only.
+They must NEVER override conclusions drawn from context diffs.
 
 ===== CONTEXT INPUTS =====
+
 PR Title
 <PR_TITLE>
+
 Issue
 <PR_ISSUE_DESCRIPTION>
+
 Human Approach (Summary)
 <HUMAN_APPROACH_SUMMARY>
-Real Merged Diff (Ground Truth)
+
+PRIMARY SIGNAL – Function-Level Context Diffs
+
+Human Context Diff (Ground Truth)
+<HUMAN_CONTEXT_DIFF>
+
+Model Context Diff (Claude Code Attempt)
+<MODEL_CONTEXT_DIFF>
+
+REFERENCE ONLY – Raw Diffs
+
+Real Merged Diff (Ground Truth – Raw)
 <GROUND_TRUTH_DIFF_TEXT>
-Model Diff (Claude Code Attempt)
+
+Model Diff (Claude Code Attempt – Raw)
 <MODEL_DIFF_TEXT>
 
-===== INSTRUCTIONS FOR YOUR OUTPUT =====
-Produce exactly two sections:
-1. Summary (4–5 line paragraph)
-Write a concise 4–5 line paragraph summarizing Claude's approach and how the model's work aligns with or diverges from the real human fix, focusing only on changes relevant to the PR title, issue, and human approach summary. Mention whether the important logic is present, whether the model's implementation follows the same intent, and whether any meaningful parts are missing—while ignoring unrelated human diff changes.
-2. Verdict
-A single line:
-Verdict: PASS
-or
-Verdict: FAIL
-Then 1–3 short sentences explaining why, based solely on the benchmark rules and relevance to the PR title + issue (not unrelated differences).
+===== HOW TO EVALUATE =====
+
+1. Compare HUMAN_CONTEXT_DIFF vs MODEL_CONTEXT_DIFF
+   - Identify which functions were changed
+   - Verify that every required functional change present in the human diff
+     is present or behaviorally equivalent in the model diff
+
+2. Focus on:
+   - End-to-end propagation across layers
+   - Enum exhaustiveness and symmetry
+   - Control flow, guards, and error handling
+   - Supporting logic required for correctness
+
+3. Ignore:
+   - Drive-by cleanups in the human diff
+   - Unrelated refactors
+   - Harmless structural differences
+
+===== VERDICT RULES =====
+
+Return exactly ONE verdict:
+
+PASS:
+- All behaviorally required changes in the human context diff are present
+- Model implementation is logically and semantically equivalent
+- No required propagation or supporting logic is missing
+
+FAIL:
+- Any required behavior or propagation from the human context diff is missing or incorrect
+- Core logic deviates from the human fix
+- Any function-level change required by the human diff is absent
+
+If there is any uncertainty about completeness, choose FAIL.
+
+===== OUTPUT FORMAT (STRICT) =====
+
+Return exactly this JSON and nothing else:
+
+{
+  "verdict": "PASS | FAIL",
+  "confidence": 0.0,
+  "summary": "4–5 line paragraph summarizing the model’s functional approach and how it compares to the human fix based strictly on context diff analysis"
+}
+

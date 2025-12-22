@@ -10,9 +10,10 @@ import os
 AUTOMATION_DIR = Path(__file__).parent.resolve()
 sys.path.insert(0, str(AUTOMATION_DIR))
 
-from prompt_builder import load_templates, fill_placeholders
-from llm_client import LLMClient
-from pr_setup import setup_pr, PRSetupError
+from scripts.prompt_builder import load_templates, fill_placeholders
+from scripts.llm_client import LLMClient
+from scripts.api_config import create_client, get_prompt_generation_model, validate_model
+from scripts.pr_setup import setup_pr, PRSetupError
 
 
 def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
@@ -21,21 +22,36 @@ def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
     
     Args:
         pr_number: The PR number to process
-        models: List of model names to run (e.g., ["glm-full", "minimax-m2"]). 
-                If None, defaults to ["minimaxai/minimax-m2"]
+        models: List of model names to run (CLI-driven execution models).
+                This parameter is REQUIRED - execution model is NOT hardcoded.
         skip_setup: If True, skip Stage 0 (PR setup). Use this if PR setup was already done manually.
     """
-    if models is None:
-        models = ["minimaxai/minimax-m2"]
+    # CRITICAL: Validate models parameter (no hardcoded defaults)
+    if not models:
+        raise ValueError(
+            "Models parameter is REQUIRED. Use --models to specify execution models. "
+            "Prompt generation will ALWAYS use minimaxai/minimax-m2, "
+            "execution will use the models specified via CLI."
+        )
+    
+    # Validate each model
+    for model in models:
+        validate_model(model)
     
     print(f"[PR {pr_number}] Starting pipeline")
-    print(f"[PR {pr_number}] Models to run: {models}")
+    print(f"[PR {pr_number}] CLI-driven execution models: {models}")
+    print(f"[PR {pr_number}] Prompt generation model: {get_prompt_generation_model()}")
+    
+    # Log the model separation clearly
+    print(f"[PR {pr_number}] Model separation:")
+    print(f"  📝 PROMPT_GENERATION = {get_prompt_generation_model()} (hardcoded)")
+    print(f"  ⚡ EXECUTION = {', '.join(models)} (CLI-driven)")
     
     # Stage 0: Automated PR Setup
     if not skip_setup:
         try:
             repo_dir = AUTOMATION_DIR.parent  # claude-work2 directory
-            pr_dir = AUTOMATION_DIR / "pr"
+            pr_dir = AUTOMATION_DIR / "Data" / "pr_data"
             setup_metadata = setup_pr(pr_number, repo_dir, pr_dir)
             print(f"[PR {pr_number}] Stage 0 completed successfully")
         except PRSetupError as e:
@@ -46,8 +62,8 @@ def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
         print(f"[PR {pr_number}] Skipping Stage 0 (PR setup) - using existing artifacts")
     
     # Load PR inputs (relative to automation_2 directory)
-    pr_desc_file = AUTOMATION_DIR / "pr" / f"task_pr_{pr_number}.md"
-    human_diff_file = AUTOMATION_DIR / "pr" / "original_changes.diff"
+    pr_desc_file = AUTOMATION_DIR / "Data" / "pr_data" / f"task_pr_{pr_number}.md"
+    human_diff_file = AUTOMATION_DIR / "Data" / "pr_data" / "original_changes.diff"
     
     if not pr_desc_file.exists():
         print(f"[PR {pr_number}] Error: PR description not found at {pr_desc_file}")
@@ -65,20 +81,16 @@ def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
     pr_metadata = _extract_pr_metadata(pr_text)
     
     # Load templates (relative to automation_2 directory)
-    templates = load_templates(AUTOMATION_DIR / "Prompt.md")
+    templates = load_templates(AUTOMATION_DIR / "templates" / "Prompt.md")
     
     # Generate human approach summary once (used for all models)
     # Prompt generation ALWAYS uses minimaxai/minimax-m2 (strict requirement)
     print(f"[PR {pr_number}] Generating human approach summary...")
-    human_approach_client = LLMClient(
-        model="minimaxai/minimax-m2",  # Always use minimaxai/minimax-m2 for prompt generation
-        api_key=" ",
-        base_url="https://grid.ai.juspay.net"
-    )
+    human_approach_client = create_client(get_prompt_generation_model())
     human_approach_summary = _generate_human_approach(templates, pr_metadata, human_patch, human_approach_client)
     
     # Create PR-level runs directory for shared artifacts
-    pr_run_dir = AUTOMATION_DIR / "runs" / f"PR-{pr_number}"
+    pr_run_dir = AUTOMATION_DIR / "Data" / "runs" / f"PR-{pr_number}"
     pr_run_dir.mkdir(parents=True, exist_ok=True)
     
     # Save human approach summary to PR-level directory (shared across all models)
@@ -86,7 +98,31 @@ def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
     human_approach_file.write_text(human_approach_summary, encoding="utf-8")
     print(f"[PR {pr_number}] Human approach summary saved to {human_approach_file}")
     
+    # Generate human context diff (ground truth function-level diff)
+    print(f"[PR {pr_number}] Generating human context diff...")
+    human_context_diff_file = pr_run_dir / "human_context.diff"
+    try:
+        # Get merge commit info from setup
+        repo_dir = AUTOMATION_DIR.parent
+        pr_dir = AUTOMATION_DIR / "Data" / "pr_data"
+        merge_commit_file = pr_dir / f"merge_commit_{pr_number}.txt"
+        
+        if merge_commit_file.exists():
+            merge_commit = merge_commit_file.read_text(encoding="utf-8").strip()
+            # Generate context diff for merge^1..merge (the PR changes)
+            base_ref = f"{merge_commit}^1"
+            target_ref = merge_commit
+            _generate_context_diff(human_context_diff_file, base_ref=base_ref, target_ref=target_ref)
+            print(f"[PR {pr_number}] Human context diff saved to {human_context_diff_file}")
+        else:
+            print(f"[PR {pr_number}] Warning: merge_commit file not found, cannot generate human context diff")
+            human_context_diff_file = None
+    except RuntimeError as e:
+        print(f"[PR {pr_number}] Warning: Human context diff generation failed: {e}")
+        human_context_diff_file = None
+    
     # Run for each model
+
     all_results = {}
     for model in models:
         print(f"\n{'='*80}")
@@ -94,7 +130,7 @@ def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
         print(f"{'='*80}\n")
         
         # Create model-specific run directory (relative to automation_2 directory)
-        model_run_dir = AUTOMATION_DIR / "runs" / f"PR-{pr_number}" / model.replace("/", "-")
+        model_run_dir = AUTOMATION_DIR / "Data" / "runs" / f"PR-{pr_number}" / model.replace("/", "-")
         model_run_dir.mkdir(parents=True, exist_ok=True)
         
         # Create input directory and copy inputs
@@ -105,25 +141,21 @@ def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
         # Save human approach summary to model-specific input directory
         (input_dir / "human_approach.txt").write_text(human_approach_summary, encoding="utf-8")
         
-        # Create LLM client for prompt generation (ALWAYS uses minimaxai/minimax-m2)
-        # Prompt generation model ≠ execution model (strict requirement)
-        prompt_gen_client = LLMClient(
-            model="minimaxai/minimax-m2",  # Always use minimaxai/minimax-m2 for prompt generation
-            api_key=" ",
-            base_url="https://grid.ai.juspay.net"
-        )
+        # Create LLM clients using unified API configuration
+        # STRICT SEPARATION: Prompt generation ALWAYS uses minimaxai/minimax-m2
+        prompt_gen_client = create_client(get_prompt_generation_model())
+        # Evaluation uses CLI-driven execution model
+        eval_client = create_client(model)
         
-        # Create LLM client for evaluation (uses execution model)
-        eval_client = LLMClient(
-            model=model,
-            api_key=" ",
-            base_url="https://grid.ai.juspay.net"
-        )
+        print(f"[PR {pr_number}] Client setup:")
+        print(f"  📝 Prompt Generation Client: {get_prompt_generation_model()}")
+        print(f"  ⚡ Evaluation Client: {model}")
         
         # Run attempts loop
         final_result = _run_attempts_loop(
             pr_number, model_run_dir, templates, pr_text, human_patch, 
-            prompt_gen_client, eval_client, pr_metadata, human_approach_summary, model
+            prompt_gen_client, eval_client, pr_metadata, human_approach_summary, model,
+            human_context_diff_file
         )
         
         # Save model-specific final.json
@@ -137,7 +169,7 @@ def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
     
     # Generate comparison report if multiple models
     if len(models) > 1:
-        comparison_file = AUTOMATION_DIR / "runs" / f"PR-{pr_number}" / "model_comparison.json"
+        comparison_file = AUTOMATION_DIR / "Data" / "runs" / f"PR-{pr_number}" / "model_comparison.json"
         comparison_file.write_text(json.dumps(all_results, indent=2), encoding="utf-8")
         print(f"\n[PR {pr_number}] Model comparison saved to {comparison_file}")
     
@@ -213,7 +245,7 @@ def _validate_git_state():
     """Validate git repository state before Claude execution.
     
     Pre-execution git sanity checks:
-    - Clean working tree
+    - Clean working tree (ignoring automation_2/ which is gitignored)
     - Correct base commit (merge^1)
     
     Raises:
@@ -229,10 +261,14 @@ def _validate_git_state():
         text=True
     )
     
-    if status_result.stdout.strip():
+    # Filter out automation_2/ directory (it's in .gitignore)
+    status_lines = status_result.stdout.strip().split('\n') if status_result.stdout.strip() else []
+    relevant_changes = [line for line in status_lines if line and not line.endswith('automation_2/')]
+    
+    if relevant_changes:
         raise RuntimeError(
             f"Git working tree is not clean. Repository state is unsafe.\n"
-            f"Working tree status:\n{status_result.stdout}"
+            f"Working tree status:\n" + '\n'.join(relevant_changes)
         )
     
     # Verify we're on a valid commit (not detached HEAD or similar issues)
@@ -296,27 +332,19 @@ def _map_model_name(model: str) -> str:
     
     This is the explicit, validated execution-model mapping.
     Rules:
-    - run_pr --models glm-full → execution model = "glm-full"
+    - run_pr --models glm-45-air-curriculum-learning → execution model = "glm-45-air-curriculum-learning"
     - run_pr --models minimax-m2 → execution model = "minimaxai/minimax-m2"
     
     Raises:
         ValueError: If model name is unknown or unmapped
     """
-    # Explicit model mapping - DO NOT guess or default
-    MODEL_MAPPING = {
-        "glm-full": "glm-full",
-        "minimax-m2": "minimaxai/minimax-m2",
-        "minimaxai/minimax-m2": "minimaxai/minimax-m2",  # Allow already-mapped names
-        # Add more models here as needed
-    }
+    # Flexible model mapping that accepts any model name
+    # Special handling for known minimax models to use full namespace
+    if model == "minimax-m2":
+        return "minimaxai/minimax-m2"
     
-    if model not in MODEL_MAPPING:
-        raise ValueError(
-            f"Unknown model name: '{model}'. "
-            f"Valid models: {list(MODEL_MAPPING.keys())}"
-        )
-    
-    return MODEL_MAPPING[model]
+    # For all other models, use the name as-is (including minimaxai/minimax-m2)
+    return model
 
 
 def _validate_environment_variables():
@@ -327,7 +355,7 @@ def _validate_environment_variables():
     """
     required_vars = {
         "ANTHROPIC_BASE_URL": "https://grid.ai.juspay.net",
-        "ANTHROPIC_AUTH_TOKEN": " "
+        "ANTHROPIC_AUTH_TOKEN": "sk-.."
     }
     
     # We don't check os.environ here because we inject them ourselves
@@ -345,7 +373,7 @@ def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path
     
     Uses the required execution contract:
     ANTHROPIC_BASE_URL="https://grid.ai.juspay.net" \
-    ANTHROPIC_AUTH_TOKEN="sk-uJfk3pIE2KcP9DoGx4UeHA" \
+    ANTHROPIC_AUTH_TOKEN="sk-.." \
     claude --model "<MODEL_NAME>" --prompt-file <PROMPT_PATH>
     
     Raises:
@@ -367,20 +395,29 @@ def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path
     # Set environment variables for Claude Code (explicit injection)
     env = os.environ.copy()
     env["ANTHROPIC_BASE_URL"] = "https://grid.ai.juspay.net"
-    env["ANTHROPIC_AUTH_TOKEN"] = " "
+    env["ANTHROPIC_AUTH_TOKEN"] = "sk-.."
     
     # Read prompt content and clean it (remove any reasoning/metadata tags)
     prompt_content = prompt_file.read_text(encoding="utf-8")
-    # Remove any reasoning tags that might be in the prompt
-    # Remove <think> or <think> tags and their content
-    prompt_content = re.sub(r'<(?:think|redacted_reasoning)>.*?</(?:think|redacted_reasoning)>', '', prompt_content, flags=re.DOTALL | re.IGNORECASE)
-    # Clean up extra whitespace
-    prompt_content = re.sub(r'\n{3,}', '\n\n', prompt_content)
-    prompt_content = prompt_content.strip()
     
-    # If prompt is empty after cleaning, use the original (fallback)
-    if not prompt_content:
-        prompt_content = prompt_file.read_text(encoding="utf-8").strip()
+    # Remove any reasoning tags that might be in the LLM response
+    # Match both <think>...</think> and <redacted_reasoning>...</redacted_reasoning>
+    cleaned_content = re.sub(r'<(?:think|redacted_reasoning)>.*?</(?:think|redacted_reasoning)>', '', prompt_content, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Clean up extra whitespace
+    cleaned_content = re.sub(r'\n{3,}', '\n\n', cleaned_content).strip()
+    
+    # If prompt is empty after cleaning, fail explicitly (don't fallback)
+    if not cleaned_content:
+        raise RuntimeError(
+            f"Prompt is empty after cleaning <think> tags. "
+            f"The LLM may have only generated reasoning without an actual prompt. "
+            f"Original prompt file: {prompt_file}"
+        )
+    
+    prompt_content = cleaned_content
+    
+    print(f"  [Stage 3] Cleaned prompt: {len(prompt_content)} chars")
     
     # Execute Claude Code with --model, --print, and --permission-mode to allow edits
     # Use stdin to pass prompt (more reliable for long prompts)
@@ -424,14 +461,81 @@ def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path
     print(f"  [Stage 3] Output saved to {stdout_file} and {stderr_file}")
 
 
-def _capture_git_diff(diff_file: Path):
-    """Capture git diff after Claude execution."""
+def _generate_context_diff(output_file: Path, base_ref: str = None, target_ref: str = None, staged: bool = False):
+    """Generate context-aware diff using automation_2/context_diff.py
+    
+    Args:
+        output_file: Path to save the context diff
+        base_ref: Base git ref (for human diff)
+        target_ref: Target git ref (for human diff)
+        staged: If True, generate diff from staged changes (for model diff)
+    
+    Raises:
+        RuntimeError: If context diff generation fails
+    """
+    claude_work_dir = AUTOMATION_DIR.parent
+    context_diff_script = AUTOMATION_DIR / "scripts" / "context_diff.py"
+    
+    if not context_diff_script.exists():
+        raise RuntimeError(
+            f"Context diff script not found at {context_diff_script}. "
+            f"Cannot generate function-level context diffs."
+        )
+    
+    # Build command
+    cmd = ["python3", str(context_diff_script), "-o", str(output_file)]
+    
+    if staged:
+        cmd.append("--staged")
+    elif base_ref and target_ref:
+        cmd.extend([base_ref, target_ref])
+    elif base_ref:
+        cmd.append(base_ref)
+    
+    # Run context_diff
+    result = subprocess.run(
+        cmd,
+        cwd=claude_work_dir,
+        capture_output=True,
+        text=True
+    )
+    
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Context diff generation failed (return code {result.returncode}).\n"
+            f"Error: {result.stderr}"
+        )
+    
+    # Verify output file was created and is non-empty
+    if not output_file.exists():
+        raise RuntimeError(
+            f"Context diff output file not created: {output_file}. "
+            f"This is a CRITICAL failure."
+        )
+    
+    content = output_file.read_text(encoding="utf-8")
+    if not content.strip():
+        raise RuntimeError(
+            f"Context diff is empty. This is a FAILED attempt. "
+            f"Git may have no changes to process."
+        )
+    
+    return content
+
+
+def _capture_git_diff(diff_file: Path, context_diff_file: Path):
+    """Capture git diff and context diff after Claude execution.
+    
+    Args:
+        diff_file: Path to save raw git diff
+        context_diff_file: Path to save context-aware diff
+    """
     print("  [Stage 3] Capturing git diff")
     
     # Get the claude-work directory (parent of automation_2)
     claude_work_dir = AUTOMATION_DIR.parent
     
-    # Get git diff (run from claude-work directory)
+    # Get raw git diff (run from claude-work directory)
     result = subprocess.run(
         ["git", "diff"],
         cwd=claude_work_dir,
@@ -439,40 +543,120 @@ def _capture_git_diff(diff_file: Path):
         text=True
     )
     
-    # Save diff
+    # Save raw diff
     diff_content = result.stdout
     diff_file.write_text(diff_content, encoding="utf-8")
     
     # Log explicitly if diff is empty
     if not diff_content.strip():
         print(f"  [Stage 3] Warning: Claude Code made no changes (empty diff)")
+        print(f"  [Stage 3] Diff saved to {diff_file}")
+        return
     else:
         diff_lines = len(diff_content.splitlines())
-        print(f"  [Stage 3] Diff captured: {diff_lines} lines")
+        print(f"  [Stage 3] Raw diff captured: {diff_lines} lines")
+        print(f"  [Stage 3] Raw diff saved to {diff_file}")
     
-    print(f"  [Stage 3] Diff saved to {diff_file}")
+    # Generate context diff from staged changes
+    print("  [Stage 3] Generating model context diff (function-level)")
+    try:
+        # Stage all changes first
+        subprocess.run(["git", "add", "-A"], cwd=claude_work_dir, check=True)
+        
+        # Generate context diff from staged changes
+        _generate_context_diff(context_diff_file, staged=True)
+        
+        # Unstage changes
+        subprocess.run(["git", "reset"], cwd=claude_work_dir, check=True)
+        
+        context_lines = len(context_diff_file.read_text(encoding="utf-8").splitlines())
+        print(f"  [Stage 3] Context diff captured: {context_lines} lines")
+        print(f"  [Stage 3] Context diff saved to {context_diff_file}")
+    except RuntimeError as e:
+        print(f"  [Stage 3] Warning: Context diff generation failed: {e}")
+        print(f"  [Stage 3] Continuing with raw diff only")
 
 
 def _evaluate_solution(templates, pr_metadata: dict, human_patch: str, human_approach_summary: str, 
-                      claude_diff_file: Path, eval_file: Path, client: LLMClient):
-    """Evaluate Claude's solution using the evaluation template."""
-    print("  [Stage 4] Loading Claude's diff")
+                      claude_diff_file: Path, eval_file: Path, client: LLMClient,
+                      human_context_diff_file: Path = None, model_context_diff_file: Path = None):
+    """Evaluate Claude's solution using CONTEXT DIFFS ONLY.
     
-    # Read Claude's diff
+    This function enforces context-diff-only evaluation:
+    - Raw diffs are kept for logging/debugging only
+    - Only function-level context diffs are used for verdict
+    - Fail fast if context diffs are missing
+    """
+    print("  [Stage 4] Evaluating solution using CONTEXT DIFFS ONLY")
+    
+    # CRITICAL: Validate that context diffs exist
+    if human_context_diff_file is None or not human_context_diff_file.exists():
+        print("  [Stage 4] ERROR: Human context diff is missing - cannot evaluate")
+        # Fallback to FAIL with clear reason
+        verdict_data = {
+            "verdict": "FAIL",
+            "reason": "Evaluation cannot proceed: Human context diff (ground truth) is missing. Context-diff-only evaluation requires both human and model context diffs."
+        }
+        eval_file.write_text(json.dumps(verdict_data, indent=2), encoding="utf-8")
+        print(f"  [Stage 4] Verdict: FAIL (missing human context diff)")
+        return
+    
+    if model_context_diff_file is None or not model_context_diff_file.exists():
+        print("  [Stage 4] ERROR: Model context diff is missing - cannot evaluate")
+        # Fallback to FAIL with clear reason
+        verdict_data = {
+            "verdict": "FAIL",
+            "reason": "Evaluation cannot proceed: Model context diff is missing. This indicates the model made no Python changes or context diff generation failed."
+        }
+        eval_file.write_text(json.dumps(verdict_data, indent=2), encoding="utf-8")
+        print(f"  [Stage 4] Verdict: FAIL (missing model context diff)")
+        return
+    
+    # Load context diffs (authoritative signal for evaluation)
+    human_context_diff = human_context_diff_file.read_text(encoding="utf-8")
+    model_context_diff = model_context_diff_file.read_text(encoding="utf-8")
+    
+    # Validate context diffs are non-empty
+    if not human_context_diff.strip():
+        verdict_data = {
+            "verdict": "FAIL",
+            "reason": "Human context diff is empty. Cannot evaluate without ground truth function-level changes."
+        }
+        eval_file.write_text(json.dumps(verdict_data, indent=2), encoding="utf-8")
+        print(f"  [Stage 4] Verdict: FAIL (empty human context diff)")
+        return
+    
+    if not model_context_diff.strip():
+        verdict_data = {
+            "verdict": "FAIL",
+            "reason": "Model context diff is empty. Model made no function-level changes."
+        }
+        eval_file.write_text(json.dumps(verdict_data, indent=2), encoding="utf-8")
+        print(f"  [Stage 4] Verdict: FAIL (empty model context diff)")
+        return
+    
+    # Read raw diffs for LOGGING ONLY (not used for verdict)
     claude_patch = claude_diff_file.read_text(encoding="utf-8")
     
-    # Build evaluation prompt with all required placeholders
+    print(f"  [Stage 4] Human context diff: {len(human_context_diff)} chars")
+    print(f"  [Stage 4] Model context diff: {len(model_context_diff)} chars")
+    print(f"  [Stage 4] Raw diff (for logging only): {len(claude_patch)} chars")
+    
+    # Build evaluation prompt with CONTEXT DIFFS as authoritative signal
     eval_replacements = {
         "PR_TITLE": pr_metadata["PR_TITLE"],
         "PR_ISSUE_DESCRIPTION": pr_metadata["PR_ISSUE_DESCRIPTION"],
         "HUMAN_APPROACH_SUMMARY": human_approach_summary,
+        "HUMAN_CONTEXT_DIFF": human_context_diff,  # Function-level ground truth
+        "MODEL_CONTEXT_DIFF": model_context_diff,  # Function-level model changes
+        # Raw diffs for reference only (NOT for scoring)
         "GROUND_TRUTH_DIFF_TEXT": human_patch,
         "MODEL_DIFF_TEXT": claude_patch,
     }
     
     eval_prompt = fill_placeholders(templates.evaluation, eval_replacements)
     
-    print("  [Stage 4] Calling evaluation LLM")
+    print("  [Stage 4] Calling evaluation LLM with context diffs")
     
     # Call LLM for evaluation
     eval_response = client.run(eval_prompt)
@@ -509,7 +693,7 @@ def _parse_verdict(eval_response: str) -> dict:
 
 def _run_attempts_loop(pr_number: str, run_dir: Path, templates, pr_text: str, human_patch: str, 
                       prompt_gen_client: LLMClient, eval_client: LLMClient, pr_metadata: dict, 
-                      human_approach_summary: str, execution_model: str) -> dict:
+                      human_approach_summary: str, execution_model: str, human_context_diff_file: Path = None) -> dict:
     """Run up to 3 attempts with controlled retries."""
     attempts = 0
     final_verdict = "FAIL"
@@ -522,7 +706,7 @@ def _run_attempts_loop(pr_number: str, run_dir: Path, templates, pr_text: str, h
         # Run single attempt
         verdict = _run_single_attempt(
             pr_number, run_dir, templates, pr_text, human_patch, prompt_gen_client, eval_client, 
-            attempt_num, pr_metadata, human_approach_summary, execution_model
+            attempt_num, pr_metadata, human_approach_summary, execution_model, human_context_diff_file
         )
         
         if verdict == "PASS":
@@ -543,7 +727,8 @@ def _run_attempts_loop(pr_number: str, run_dir: Path, templates, pr_text: str, h
 
 def _run_single_attempt(pr_number: str, run_dir: Path, templates, pr_text: str, human_patch: str, 
                       prompt_gen_client: LLMClient, eval_client: LLMClient, attempt_num: int, 
-                      pr_metadata: dict, human_approach_summary: str, execution_model: str) -> str:
+                      pr_metadata: dict, human_approach_summary: str, execution_model: str,
+                      human_context_diff_file: Path = None) -> str:
     """Run a single attempt: generate prompt, run Claude, evaluate.
     
     Returns:
@@ -601,11 +786,12 @@ def _run_single_attempt(pr_number: str, run_dir: Path, templates, pr_text: str, 
     stdout_file = attempt_dir / "stdout.txt"
     stderr_file = attempt_dir / "stderr.txt"
     diff_file = attempt_dir / "claude.diff"
+    context_diff_file = attempt_dir / "claude_context.diff"
     
     # Execution with error handling
     try:
         _execute_claude_code(prompt_file, stdout_file, stderr_file, execution_model)
-        _capture_git_diff(diff_file)
+        _capture_git_diff(diff_file, context_diff_file)
     except (RuntimeError, ValueError) as e:
         # Hard failure on execution errors (Problem 1️⃣)
         error_data = {
@@ -642,9 +828,13 @@ def _run_single_attempt(pr_number: str, run_dir: Path, templates, pr_text: str, 
         print(f"[PR {pr_number}] FAILED: claude.diff is empty (no changes made)")
         return "FAIL"
     
-    # Evaluate the solution (using eval_client = execution model)
+    # Evaluate the solution using CONTEXT DIFFS ONLY (using eval_client = execution model)
     eval_file = attempt_dir / "eval.json"
-    _evaluate_solution(templates, pr_metadata, human_patch, human_approach_summary, diff_file, eval_file, eval_client)
+    _evaluate_solution(
+        templates, pr_metadata, human_patch, human_approach_summary, 
+        diff_file, eval_file, eval_client, 
+        human_context_diff_file, context_diff_file
+    )
     
     # Return verdict
     eval_data = json.loads(eval_file.read_text(encoding="utf-8"))
