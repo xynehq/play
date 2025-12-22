@@ -1,5 +1,4 @@
 ———————Prompt for getting Human Approach from real diff:———————————
-
 ## [HUMAN_APPROACH]
 You are a senior backend engineer reviewing a pull request that fixed a real bug.
 
@@ -50,9 +49,7 @@ Original PR description:
  - Hints about which parts of the system Claude Code should focus on.
 3. Keep the final prompt between 4–5 lines.
 Output ONLY the prompt text, with no commentary and no markdown.
-
 ———————————Prompt to get Second and Third Prompt—————————
-
 ## [PROMPT_2and3]
 You are helping me iteratively improve a prompt for Claude Code. Claude Code is an agentic coding tool in the terminal that understands the codebase. It will be the next consecutive prompt after the previous prompt was given, where the model's earlier attempt was incomplete or incorrect. I will give you the previous prompt, Claude Code's diff, and a natural-language evaluation of what went wrong and the real human approach. Your task is to produce a NEW prompt for the next attempt that provides guidance using the human approach summary to arrive at the same solution as the human and fits into a single 4–5 line paragraph.
 ===== PREVIOUS PROMPT =====

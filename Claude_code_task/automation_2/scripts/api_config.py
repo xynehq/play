@@ -7,7 +7,7 @@ All LLM clients use this configuration, differing only by the model parameter.
 
 # Single source of truth for API configuration
 API_CONFIG = {
-    "api_key": "sk-67cI50BNxSw7SsYSkQGvGw",
+    "api_key": " ",
     "base_url": "https://grid.ai.juspay.net"
 }
 

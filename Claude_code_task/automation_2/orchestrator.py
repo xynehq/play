@@ -355,7 +355,7 @@ def _validate_environment_variables():
     """
     required_vars = {
         "ANTHROPIC_BASE_URL": "https://grid.ai.juspay.net",
-        "ANTHROPIC_AUTH_TOKEN": "sk-uJfk3pIE2KcP9DoGx4UeHA"
+        "ANTHROPIC_AUTH_TOKEN": "sk-.."
     }
     
     # We don't check os.environ here because we inject them ourselves
@@ -373,7 +373,7 @@ def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path
     
     Uses the required execution contract:
     ANTHROPIC_BASE_URL="https://grid.ai.juspay.net" \
-    ANTHROPIC_AUTH_TOKEN="sk-uJfk3pIE2KcP9DoGx4UeHA" \
+    ANTHROPIC_AUTH_TOKEN="sk-.." \
     claude --model "<MODEL_NAME>" --prompt-file <PROMPT_PATH>
     
     Raises:
@@ -395,7 +395,7 @@ def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path
     # Set environment variables for Claude Code (explicit injection)
     env = os.environ.copy()
     env["ANTHROPIC_BASE_URL"] = "https://grid.ai.juspay.net"
-    env["ANTHROPIC_AUTH_TOKEN"] = "sk-uJfk3pIE2KcP9DoGx4UeHA"
+    env["ANTHROPIC_AUTH_TOKEN"] = "sk-.."
     
     # Read prompt content and clean it (remove any reasoning/metadata tags)
     prompt_content = prompt_file.read_text(encoding="utf-8")
