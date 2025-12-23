@@ -2,14 +2,14 @@
 # This file contains model details for benchmark testing
 
 # API Configuration
-api_base: "enter your base url here"
+api_base: "Enter your API base URL here"
 
 # Model Names - choose which model to test
-model_name: "model name"
+model_name: "Enter your model name here"
 
 
 # API Authentication (optional)
-api_key: "asd"  # Leave blank if not required
+api_key: ""  # Leave blank if not required
 
 # Benchmark Settings
 benchmark:
@@ -19,10 +19,8 @@ benchmark:
   num_tests: null       # Number of tests to run (null for all)
   language: "1"       # Options: 1. All languages, 2. C++, 3. Go, 4. Java, 5. JavaScript, 6. Python, 7. Rust
   keywords: null        # Additional keyword filter (optional)
-  
-# Model Parameters (optional - for model settings file)
-model_parameters:
-  temperature: 0.6
-  top_p: 0.95
-  max_tokens: 128000
-  top_k: 25
+
+max_iterations: 100 #For SWE-Bench
+temperature: 0.0     # For SWE-Bench
+top_p: 0.95         # For SWE-Bench
+
