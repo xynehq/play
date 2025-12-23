@@ -672,18 +672,47 @@ def _evaluate_solution(templates, pr_metadata: dict, human_patch: str, human_app
 
 
 def _parse_verdict(eval_response: str) -> dict:
-    """Parse verdict from LLM evaluation response."""
-    # Look for PASS or FAIL in the response
+    """Parse verdict from LLM evaluation response.
+    
+    Priority order for verdict extraction:
+    1. Explicit "Verdict: PASS" or "Verdict: FAIL" markers
+    2. Last occurrence of PASS/FAIL in the response (typically the conclusion)
+    3. Fallback to UNKNOWN if neither found
+    
+    This ensures that the verdict field is consistent with the reasoning/conclusion.
+    """
     verdict = "UNKNOWN"
-    
-    # Check for explicit verdict markers
-    if re.search(r'\bPASS\b', eval_response, re.IGNORECASE):
-        verdict = "PASS"
-    elif re.search(r'\bFAIL\b', eval_response, re.IGNORECASE):
-        verdict = "FAIL"
-    
-    # Extract reason (use the full response as reason)
     reason = eval_response.strip()
+    
+    # Priority 1: Look for explicit "Verdict:" markers (case-insensitive)
+    # This handles cases where LLM explicitly states "Verdict: PASS" or "Verdict: FAIL"
+    verdict_match = re.search(r'Verdict:\s*(PASS|FAIL)', eval_response, re.IGNORECASE)
+    if verdict_match:
+        verdict = verdict_match.group(1).upper()
+        return {"verdict": verdict, "reason": reason}
+    
+    # Priority 2: Find the LAST occurrence of PASS or FAIL in the response
+    # This prioritizes the conclusion over mentions in the summary
+    pass_matches = list(re.finditer(r'\bPASS\b', eval_response, re.IGNORECASE))
+    fail_matches = list(re.finditer(r'\bFAIL\b', eval_response, re.IGNORECASE))
+    
+    last_pass_pos = pass_matches[-1].start() if pass_matches else -1
+    last_fail_pos = fail_matches[-1].start() if fail_matches else -1
+    
+    # The verdict that appears LAST in the text is likely the conclusion
+    if last_fail_pos > last_pass_pos:
+        verdict = "FAIL"
+    elif last_pass_pos > last_fail_pos:
+        verdict = "PASS"
+    
+    # Priority 3: Additional safety check - if reason contains failure keywords
+    # at the end, prioritize FAIL verdict
+    lower_reason = reason.lower()
+    if verdict == "PASS" and any(keyword in lower_reason[-500:] for keyword in 
+                                  ['incomplete implementation', 'would fail', 'critical', 
+                                   'missing', 'incorrect', 'does not work']):
+        # If marked as PASS but conclusion indicates failure, override to FAIL
+        verdict = "FAIL"
     
     return {
         "verdict": verdict,
