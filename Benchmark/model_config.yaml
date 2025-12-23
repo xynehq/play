@@ -2,10 +2,10 @@
 # This file contains model details for benchmark testing
 
 # API Configuration
-api_base: "Enter your API base URL here"
+api_base: "Enter your API base URL here"  # e.g., "https://api.yourmodel.com/v1"
 
 # Model Names - choose which model to test
-model_name: "Enter your model name here"
+model_name: "Model Name"
 
 
 # API Authentication (optional)
@@ -21,6 +21,14 @@ benchmark:
   keywords: null        # Additional keyword filter (optional)
 
 max_iterations: 100 #For SWE-Bench
-temperature: 0.0     # For SWE-Bench
-top_p: 0.95         # For SWE-Bench
+temperature: 0.0     
+top_p: 0.95         
+
+k_values: [1] # For Archit Eval
+archit_n: 1 # For Archit Eval
+archit_dataset: "archit11/evals"
+max_examples: 300 # For Archit Eval
+max_tokens: 2048 # For Archit Eval
+archit_split: "train" # For Archit Eval
+archit_output: "eval_results_litellm.json" # For Archit Eval
 
