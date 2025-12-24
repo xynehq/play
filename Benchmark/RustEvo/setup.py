@@ -222,13 +222,13 @@ def run_rq1(model="kat-dev-hs-72b", max_workers=8):
     
     try:
         # Change to RustEvo directory
-        os.chdir(RUSTEVO_DIR)
+        # os.chdir(RUSTEVO_DIR)
         
         cmd = [
-            "python3", "Evaluate/eval_models_rq1.py",
-            "--file_a", "./Dataset/RustEvo^2.json",
-            "--file_b", "./Dataset/APIDocs.json",
-            "--output", "./Results/rq1_results.json",
+            "python3", "script /eval_models_rq1.py",
+            "--file_a", "RustEvo/Dataset/RustEvo^2.json",
+            "--file_b", "RustEvo/Dataset/APIDocs.json",
+            "--output", "RustEvo/Results/rq1_results.json",
             "--models", model,
             "--max_workers", str(max_workers),
             "--api_key", api_key,
@@ -239,8 +239,8 @@ def run_rq1(model="kat-dev-hs-72b", max_workers=8):
         
         if result and result.returncode == 0:
             print_success("RQ1 evaluation completed successfully!")
-            print_info(f"Results saved to: {RUSTEVO_DIR}/Results/rq1_results.json")
-            print_info(f"Metrics saved to: {RUSTEVO_DIR}/Results/rq1_results_metrics.json")
+            print_info(f"Results saved to: RustEvo/Results/rq1_results.json")
+            print_info(f"Metrics saved to: RustEvo/Results/rq1_results_metrics.json")
             return True
         else:
             print_error("RQ1 evaluation failed")
@@ -265,13 +265,13 @@ def run_rq3(model="kat-dev-hs-72b", max_workers=8):
     
     try:
         # Change to RustEvo directory
-        os.chdir(RUSTEVO_DIR)
+        # os.chdir(RUSTEVO_DIR)
         
         cmd = [
-            "python3", "Evaluate/eval_models_rq3.py",
-            "--file_a", "./Dataset/RustEvo^2.json",
-            "--file_b", "./Dataset/APIDocs.json",
-            "--output", "./Results/rq3_results.json",
+            "python3", "script /eval_models_rq3.py",
+            "--file_a", "RustEvo/Dataset/RustEvo^2.json",
+            "--file_b", "RustEvo/Dataset/APIDocs.json",
+            "--output", "RustEvo/Results/rq3_results.json",
             "--models", model,
             "--max_workers", str(max_workers),
             "--api_key", api_key,
@@ -282,8 +282,8 @@ def run_rq3(model="kat-dev-hs-72b", max_workers=8):
         
         if result and result.returncode == 0:
             print_success("RQ3 evaluation completed successfully!")
-            print_info(f"Results saved to: {RUSTEVO_DIR}/Results/rq3_results.json")
-            print_info(f"Metrics saved to: {RUSTEVO_DIR}/Results/rq3_results_metrics.json")
+            print_info(f"Results saved to: RustEvo/Results/rq3_results.json")
+            print_info(f"Metrics saved to: RustEvo/Results/rq3_results_metrics.json")
             return True
         else:
             print_error("RQ3 evaluation failed")
@@ -295,9 +295,9 @@ def run_rq3(model="kat-dev-hs-72b", max_workers=8):
 def display_results():
     """Display results summary"""
     print_section("Results Summary")
-    
-    rq1_metrics = f"{RUSTEVO_DIR}/Results/rq1_results_metrics.json"
-    rq3_metrics = f"{RUSTEVO_DIR}/Results/rq3_results_metrics.json"
+
+    rq1_metrics = "RustEvo/Results/rq1_results_metrics.json"
+    rq3_metrics = "RustEvo/Results/rq3_results_metrics.json"
     
     if os.path.exists(rq1_metrics):
         print_info(f"RQ1 Metrics available at: {rq1_metrics}")
@@ -426,7 +426,7 @@ def main():
     print()
     print("╔════════════════════════════════════════════════════╗")
     print("║                                                    ║")
-    print("║         RustEvo Benchmark Automation Script       ║")
+    print("║         RustEvo Benchmark Automation Script        ║")
     print("║                                                    ║")
     print("╚════════════════════════════════════════════════════╝")
     print()

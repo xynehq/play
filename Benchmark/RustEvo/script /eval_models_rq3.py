@@ -21,8 +21,8 @@ MODELS = [
 ]
 
 # API configuration
-API_KEY = os.getenv('API_KEY', 'sk-67cI50BNxSw7SsYSkQGvGw')
-BASE_URL = os.getenv('BASE_URL', 'http://34.56.189.164:8001/v1')
+API_KEY = os.getenv('API_KEY', 'sk-')
+BASE_URL = os.getenv('BASE_URL', 'xyz')
 
 def call_LLM(prompt: str, model: str, api_key: str, base_url: str) -> str:
     """Call the LLM API and return the response."""
