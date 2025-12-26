@@ -1,0 +1,51 @@
+# Configuration file for Inference and Evaluation
+
+# API Configuration (used as defaults for API-based models)
+api:
+  base_url: "https://grid.ai.juspay.net/v1/messages"
+  api_key: "add_your_api_key_here"
+
+# Model Configuration
+# These are suggested model names that will be used as defaults during interactive setup
+# You can configure as many models as you want (1-10) during script execution
+models:
+  # Model names for inference and evaluation
+  model_1: "glm4-base"  # Change this to a valid model name on your API
+  model_2: "glm-latest"
+  evaluation_model: "glm-latest"  # Change this to a valid model name on your API
+  
+  # Example: Add more model names here for quick access
+  # model_3: "gpt-4"
+  # model_4: "claude-3-opus"
+  # model_5: "llama-3-70b"
+
+# Generation Parameters
+generation:
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20  # Set to null if not supported by API
+  max_tokens: 10000
+  num_outputs: 3  # Number of outputs per data point
+
+# Evaluation Parameters
+evaluation:
+  temperature: 0.0  # Use temperature 0 for consistent evaluation
+  max_tokens: 1600
+  top_k: null
+  top_p: null
+
+# Concurrency Configuration
+concurrency:
+  max_concurrent_items: 5  # Number of items to process in parallel (recommended: 3-10)
+
+# Processing Configuration
+processing:
+  max_workers: 1  # Number of parallel workers for evaluation
+  enable_parallel: false  # Enable parallel processing
+
+# File Paths (relative to project root)
+paths:
+  input_file: "data/input.json"
+  output_dir: "model_output"
+  results_dir: "model_results"
+  logs_dir: "logs"
