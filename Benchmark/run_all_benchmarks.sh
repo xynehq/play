@@ -236,6 +236,31 @@ send_command "benchmarks" "4" "0" "$HYPERSWITCH_CMD"
 # Set pane title for Hyperswitch
 tmux select-pane -t benchmarks:4.0 -T "Hyperswitch"
 
+# Create Archit-Eval window with single pane
+print_status "Setting up Archit-Eval window..."
+tmux new-window -t benchmarks:5 -n "Archit-Eval"
+
+# Archit-Eval command
+ARCHIT_EVAL_CMD="cd Archit-Eval && python3 -m venv venv && source venv/bin/activate && pip install openai pyyaml && python3 script.py"
+
+# Send Archit-Eval command
+send_command "benchmarks" "5" "0" "$ARCHIT_EVAL_CMD"
+
+# Set pane title for Archit-Eval
+tmux select-pane -t benchmarks:5.0 -T "Archit-Eval"
+
+# Create RustEvo window with single pane
+print_status "Setting up RustEvo window..."
+tmux new-window -t benchmarks:5 -n "RustEvo"
+
+# RustEvo command
+RUSTEVO_CMD="cd RustEvo && python3 -m venv venv && source venv/bin/activate && pip install openai pyyaml && python3 setup.py"
+
+# Send RustEvo command
+send_command "benchmarks" "6" "0" "$RUSTEVO_CMD"
+
+# Set pane title for RustEvo
+tmux select-pane -t benchmarks:6.0 -T "RustEvo"
 # Select first window and attach to session
 tmux select-window -t benchmarks:1
 tmux attach-session -t benchmarks
@@ -247,11 +272,13 @@ print_status "  1. Tau (2 panes: airline, retail)"
 print_status "  2. Tau2 (4 panes: retail, airline, mock, telecom)"
 print_status "  3. Polyglot (1 pane: polyglot)"
 print_status "  4. Hyperswitch (1 pane: inference)"
+print_status "  5. Archit-Eval (1 pane: archit-eval)"
+print_status "  6. RustEvo (1 pane: rust-evo)"
 print_status ""
 print_status "Use Ctrl+B then:"
 print_status "  - n: next window"
 print_status "  - p: previous window"
-print_status "  - 1/2/3/4: go to window 1/2/3/4"
+print_status "  - 1/2/3/4/5/6: go to window 1/2/3/4/5/6"
 print_status "  - o: switch panes"
 print_status "  - d: detach session"
 print_status ""

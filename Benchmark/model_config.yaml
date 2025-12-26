@@ -2,10 +2,10 @@
 # This file contains model details for benchmark testing
 
 # API Configuration
-api_base: "Enter your API base URL here"  # e.g., "https://api.yourmodel.com/v1"
+api_base: "API_BASE"  # e.g., "https://api.yourmodel.com/v1"
 
 # Model Names - choose which model to test
-model_name: "Model Name"
+model_name: "MODEL_NAME"
 
 
 # API Authentication (optional)
@@ -32,3 +32,11 @@ max_tokens: 2048 # For Archit Eval
 archit_split: "train" # For Archit Eval
 archit_output: "eval_results_litellm.json" # For Archit Eval
 
+rust_evo_setup: 1 # For RustEvo setup 
+    # 1. Full Setup (Install dependencies + Run both RQ1 & RQ3)
+    # 2. Install Dependencies Only
+    # 3. Run RQ1 Only (Full Documentation)
+    # 4. Run RQ3 Only (Minimal Documentation)
+    # 5. Run Both RQ1 & RQ3
+    # 6. Exit
+workers: 8    # For RustEvo setup
