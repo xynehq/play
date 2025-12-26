@@ -14,7 +14,7 @@ import shutil
 import argparse
 from pathlib import Path
 import json
-
+import yaml
 # Configuration
 RUSTEVO_REPO = "https://github.com/SYSUSELab/RustEvo.git"
 RUSTEVO_DIR = "RustEvo"
@@ -64,14 +64,8 @@ def clone_rustevo_repo():
     print_section("Cloning RustEvo Repository")
     
     if os.path.exists(RUSTEVO_DIR):
-        print_info(f"RustEvo directory already exists at {RUSTEVO_DIR}")
-        response = input("Do you want to use the existing directory? (y/n): ").strip().lower()
-        if response == 'y':
-            print_success("Using existing RustEvo directory")
-            return True
-        else:
-            print_info("Removing existing directory...")
-            shutil.rmtree(RUSTEVO_DIR)
+        print_success("Using existing RustEvo directory")
+        return True
     
     print_info(f"Cloning from {RUSTEVO_REPO}...")
     
@@ -154,25 +148,16 @@ def install_python_deps():
     return True
 
 def get_api_credentials():
-    """Get API credentials from user input"""
+    """Get API credentials from Config file"""
     print_section("API Configuration")
     
     # Check if already in environment
-    api_key = os.environ.get('API_KEY', '')
-    base_url = os.environ.get('BASE_URL', '')
-    
-    if not api_key:
-        api_key = input("Enter API Key: ").strip()
-        os.environ['API_KEY'] = api_key
-    else:
-        print_info(f"Using API_KEY from environment")
-    
-    if not base_url:
-        base_url = input("Enter Base URL (e.g., https://grid.ai.juspay.net): ").strip()
-        os.environ['BASE_URL'] = base_url
-    else:
-        print_info(f"Using BASE_URL from environment: {base_url}")
-    
+    config_path = Path(Path(__file__).parent.parent / "model_config.yaml")
+    config_file = Path(config_path)
+    with open(config_file, 'r') as f:
+        yaml_data = yaml.safe_load(f)
+        api_key = yaml_data.get('api_key', '')
+        base_url = yaml_data.get('api_base', '')
     return api_key, base_url
 
 def verify_datasets():
@@ -333,89 +318,67 @@ def interactive_mode():
         sys.exit(1)
     
     # Get API credentials
-    get_api_credentials()
+    get_api_credentials()    
+    config_path = Path(Path(__file__).parent.parent / "model_config.yaml")
+    config_file = Path(config_path)    
+    choice=1
+    model=""
+    workers_rq1=8
+    workers_rq3=8
+    with open(config_file, 'r') as f:
+        yaml_data = yaml.safe_load(f)
+        choice = yaml_data.get('rust_evo_setup', 1)
+        model = yaml_data.get('model_name')
+        workers_rq1 = yaml_data.get('workers', 8)
+        workers_rq3 = yaml_data.get('workers', 8)
+    if choice == 1:
+        install_rust()
+        install_python_deps()
+        verify_datasets()
+        create_results_dir()
+
+        run_rq1(model, workers_rq1)
+        run_rq3(model, workers_rq3)
+        display_results()
+        
+    elif choice == 2:
+        install_rust()
+        install_python_deps()
+        verify_datasets()
+        create_results_dir()
+        print_success("Dependencies installed successfully!")
+        
+    elif choice == 3:
+        verify_datasets()
+        create_results_dir()
+        
+        run_rq1(model, workers_rq1)
+        display_results()
+        
+    elif choice == 4:
+        verify_datasets()
+        create_results_dir()
+        
+        run_rq3(model, workers_rq3)
+        display_results()
+        
+    elif choice == 5:
+        verify_datasets()
+        create_results_dir()
+        
+        run_rq1(model, workers_rq1)
+        run_rq3(model, workers_rq3)
+        display_results()
+        
+    elif choice == 6:
+        print_info("Exiting...")
+        sys.exit(0)
+        
+    else:
+        print_error("Invalid option. Please select 1-6.")
     
-    while True:
-        show_menu()
-        choice = input("Select an option (1-6): ").strip()
-        
-        if choice == "1":
-            install_rust()
-            install_python_deps()
-            verify_datasets()
-            create_results_dir()
-            
-            model = input("Enter model name: ").strip()
-            workers = input("Enter max workers (default: 8): ").strip()
-            if not workers:
-                workers = 8
-            else:
-                workers = int(workers)
-            
-            run_rq1(model, workers)
-            run_rq3(model, workers)
-            display_results()
-            
-        elif choice == "2":
-            install_rust()
-            install_python_deps()
-            verify_datasets()
-            create_results_dir()
-            print_success("Dependencies installed successfully!")
-            
-        elif choice == "3":
-            verify_datasets()
-            create_results_dir()
-            
-            model = input("Enter model name: ").strip()
-            workers = input("Enter max workers (default: 8): ").strip()
-            if not workers:
-                workers = 8
-            else:
-                workers = int(workers)
-            
-            run_rq1(model, workers)
-            display_results()
-            
-        elif choice == "4":
-            verify_datasets()
-            create_results_dir()
-            
-            model = input("Enter model name: ").strip()
-            workers = input("Enter max workers (default: 8): ").strip()
-            if not workers:
-                workers = 8
-            else:
-                workers = int(workers)
-            
-            run_rq3(model, workers)
-            display_results()
-            
-        elif choice == "5":
-            verify_datasets()
-            create_results_dir()
-            
-            model = input("Enter model name: ").strip()
-            workers = input("Enter max workers (default: 8): ").strip()
-            if not workers:
-                workers = 8
-            else:
-                workers = int(workers)
-            
-            run_rq1(model, workers)
-            run_rq3(model, workers)
-            display_results()
-            
-        elif choice == "6":
-            print_info("Exiting...")
-            sys.exit(0)
-            
-        else:
-            print_error("Invalid option. Please select 1-6.")
-        
-        print()
-        input("Press Enter to continue...")
-        os.system('clear' if os.name == 'posix' else 'cls')
+    print()
+    os.system('clear' if os.name == 'posix' else 'cls')
 
 def main():
     """Main entry point"""
