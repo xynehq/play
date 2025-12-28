@@ -1,20 +1,80 @@
 from pathlib import Path
-import sys
+import hashlib
+import json
+import os
+import re
 import shutil
 import subprocess
-import json
-import re
-import os
+import sys
+import time
+from typing import TYPE_CHECKING, Tuple, List, Dict, Optional
+
+if TYPE_CHECKING:
+    from scripts.llm_client import LLMClient
 
 # Add current directory to path to import existing modules
 AUTOMATION_DIR = Path(__file__).parent.resolve()
 sys.path.insert(0, str(AUTOMATION_DIR))
 
+
+RAW_DIFF_CHAR_LIMIT = 35_000      # Conservative for most frontier models
+CONTEXT_DIFF_CHAR_LIMIT = 20_000  # Leaves room for system prompt + evaluation
+
+# Tier multipliers for scoring (applied to base correctness score)
+TIER_MULTIPLIERS = {
+    1: 1.00,   # Tier-1 (Raw diff) - full precision
+    2: 0.95,   # Tier-2 (Context diff) - function-level
+    3: 0.85    # Tier-3 (Summary) - compressed
+}
+
+# Dual-Layer Timeout System for Evaluation Reliability
+EVAL_REQUEST_TIMEOUT_SECONDS = 300   # 5 minute timeout per eval request
+
+
+MAX_ATTEMPTS = 3
+
+
+from scripts.tier3_diff import (
+    # Re-export for backward compatibility with tests
+    MAX_DIFF_CHARS,  # Maximum diff size for safe analysis (50KB)
+    _normalize_code_line,
+    _compare_raw_diffs_strict,
+    _split_diff_into_chunks,
+    _validate_tier3_summary_completeness,
+    compare_chunked_with_claude,
+)
+
+# Import evaluation pipeline
+from scripts.eval_pipeline import (
+    _select_diff_tier,
+    _generate_tier3_summary,
+    _count_changed_files,
+    build_tier1_eval_prompt,
+    build_tier2_eval_prompt,
+    build_tier3_eval_prompt,
+    _evaluate_solution,
+    _parse_verdict,
+)
+
 from scripts.prompt_builder import load_templates, fill_placeholders
 from scripts.llm_client import LLMClient
-from scripts.api_config import create_client, get_prompt_generation_model, validate_model
-from scripts.pr_setup import setup_pr, PRSetupError
 
+
+from scripts.api_config import (
+    create_client, 
+    get_prompt_generation_model, 
+    validate_model,
+    get_anthropic_auth_key,
+    get_anthropic_base_url
+)
+from scripts.pr_setup import setup_pr, PRSetupError
+from scripts.checkpoint_manager import (
+    get_resume_info,
+    mark_attempt_in_progress,
+    mark_attempt_completed,
+    mark_attempt_failed,
+    validate_attempt_artifacts
+)
 
 def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
     """
@@ -93,14 +153,23 @@ def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
     pr_run_dir = AUTOMATION_DIR / "Data" / "runs" / f"PR-{pr_number}"
     pr_run_dir.mkdir(parents=True, exist_ok=True)
     
-    # Save human approach summary to PR-level directory (shared across all models)
-    human_approach_file = pr_run_dir / "human_approach.txt"
+    # Create shared input directory for all models (single source of truth)
+    shared_input_dir = pr_run_dir / "shared_input"
+    shared_input_dir.mkdir(exist_ok=True)
+    
+    # Save human approach summary to shared input (ONCE for all models)
+    human_approach_file = shared_input_dir / "human_approach.txt"
     human_approach_file.write_text(human_approach_summary, encoding="utf-8")
     print(f"[PR {pr_number}] Human approach summary saved to {human_approach_file}")
     
-    # Generate human context diff (ground truth function-level diff)
+    # Copy PR files to shared input (ONCE for all models)
+    shutil.copy2(pr_desc_file, shared_input_dir / "pr.md")
+    shutil.copy2(human_diff_file, shared_input_dir / "human.diff")
+    print(f"[PR {pr_number}] PR files copied to shared input")
+    
+    # Generate human context diff (ground truth function-level diff) - ONCE for all models
     print(f"[PR {pr_number}] Generating human context diff...")
-    human_context_diff_file = pr_run_dir / "human_context.diff"
+    human_context_diff_file = shared_input_dir / "human_context.diff"
     try:
         # Get merge commit info from setup
         repo_dir = AUTOMATION_DIR.parent
@@ -121,41 +190,71 @@ def run_pr(pr_number: str, models: list = None, skip_setup: bool = False):
         print(f"[PR {pr_number}] Warning: Human context diff generation failed: {e}")
         human_context_diff_file = None
     
+    # Generate first prompt ONCE for all models (deterministic across models)
+    print(f"[PR {pr_number}] Generating shared first prompt...")
+    first_prompt_file = shared_input_dir / "first_prompt.txt"
+    if not first_prompt_file.exists():
+        # Generate first prompt using minimax-m2
+        reasoning_client = create_client(get_prompt_generation_model())
+        replacements = _build_replacements(pr_text, human_patch, pr_metadata)
+        meta_prompt = fill_placeholders(templates.prompt1, replacements)
+        first_prompt = reasoning_client.run(meta_prompt)
+        first_prompt_file.write_text(first_prompt, encoding="utf-8")
+        print(f"[PR {pr_number}] First prompt generated and saved to {first_prompt_file}")
+    else:
+        print(f"[PR {pr_number}] First prompt already exists, reusing from {first_prompt_file}")
+    
     # Run for each model
-
     all_results = {}
     for model in models:
         print(f"\n{'='*80}")
         print(f"[PR {pr_number}] Running with model: {model}")
         print(f"{'='*80}\n")
         
+        # Reset repository before starting each new model
+        # This ensures each model starts with a clean slate
+        print(f"[PR {pr_number}] Resetting repository before model {model}")
+        _reset_repository()
+        
         # Create model-specific run directory (relative to automation_2 directory)
         model_run_dir = AUTOMATION_DIR / "Data" / "runs" / f"PR-{pr_number}" / model.replace("/", "-")
         model_run_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create input directory and copy inputs
-        input_dir = model_run_dir / "input"
-        input_dir.mkdir(exist_ok=True)
-        shutil.copy2(pr_desc_file, input_dir / "pr.md")
-        shutil.copy2(human_diff_file, input_dir / "human.diff")
-        # Save human approach summary to model-specific input directory
-        (input_dir / "human_approach.txt").write_text(human_approach_summary, encoding="utf-8")
+        # Create lightweight model-specific input reference (NOT a copy - just a symlink/reference)
+        # Model consumes shared PR context, no duplication
+        input_ref_file = model_run_dir / "input_ref.json"
+        input_ref = {
+            "shared_input_dir": str(shared_input_dir.relative_to(AUTOMATION_DIR / "Data" / "runs")),
+            "pr_md": "shared_input/pr.md",
+            "human_diff": "shared_input/human.diff",
+            "human_approach": "shared_input/human_approach.txt",
+            "human_context_diff": "shared_input/human_context.diff" if human_context_diff_file else None,
+            "first_prompt": "shared_input/first_prompt.txt"
+        }
+        input_ref_file.write_text(json.dumps(input_ref, indent=2), encoding="utf-8")
+        print(f"[PR {pr_number}] Model input reference created (points to shared_input)")
         
         # Create LLM clients using unified API configuration
-        # STRICT SEPARATION: Prompt generation ALWAYS uses minimaxai/minimax-m2
-        prompt_gen_client = create_client(get_prompt_generation_model())
-        # Evaluation uses CLI-driven execution model
-        eval_client = create_client(model)
+        # STRICT SEPARATION: ALL reasoning uses minimaxai/minimax-m2
+        # - Prompt generation uses minimax-m2
+        # - Evaluation uses minimax-m2
+        # - Human approach summary uses minimax-m2
+        # The execution model is ONLY used for Claude Code execution
+        reasoning_client = create_client(get_prompt_generation_model())
         
         print(f"[PR {pr_number}] Client setup:")
-        print(f"  📝 Prompt Generation Client: {get_prompt_generation_model()}")
-        print(f"  ⚡ Evaluation Client: {model}")
+        print(f"  🧠 BRAIN (Reasoning): {get_prompt_generation_model()}")
+        print(f"  🤖 HANDS (Execution): {model}")
+        print(f"  📝 Prompt Generation: minimax-m2")
+        print(f"  ⚖️  Evaluation: minimax-m2")
+        print(f"  ⚡ Code Execution: {model}")
         
-        # Run attempts loop
+        # Run attempts loop - pass shared_input_dir for first prompt reuse
+        # The execution model is only used for Claude Code execution (not LLM reasoning)
         final_result = _run_attempts_loop(
             pr_number, model_run_dir, templates, pr_text, human_patch, 
-            prompt_gen_client, eval_client, pr_metadata, human_approach_summary, model,
-            human_context_diff_file
+            reasoning_client, reasoning_client, pr_metadata, human_approach_summary, model,
+            human_context_diff_file, shared_input_dir
         )
         
         # Save model-specific final.json
@@ -309,9 +408,9 @@ def _reset_repository():
             f"Error: {reset_result.stderr}"
         )
     
-    # Clean untracked files
+    # Clean untracked files (SAFE: preserve automation_2 directory and all its subdirectories)
     clean_result = subprocess.run(
-        ["git", "clean", "-fd"],
+        ["git", "clean", "-fd", "-e", "automation_2", "-e", "automation_2/**"],
         cwd=claude_work_dir,
         capture_output=True,
         text=True
@@ -350,22 +449,20 @@ def _map_model_name(model: str) -> str:
 def _validate_environment_variables():
     """Validate required environment variables for Claude Code execution.
     
-    Raises:
-        RuntimeError: If required environment variables are missing
-    """
-    required_vars = {
-        "ANTHROPIC_BASE_URL": "https://grid.ai.juspay.net",
-        "ANTHROPIC_AUTH_TOKEN": "sk-.."
-    }
+    This function validates that all required environment variables are available
+    from the centralized api_config module.
     
-    # We don't check os.environ here because we inject them ourselves
-    # This function exists to document the contract and can be extended if needed
-    for var_name, var_value in required_vars.items():
-        if not var_value:
-            raise RuntimeError(
-                f"Required environment variable '{var_name}' is not configured. "
-                f"Claude Code execution cannot proceed."
-            )
+    Raises:
+        SystemExit: If required environment variables are missing (from api_config)
+    """
+    # Validate by attempting to retrieve values from centralized config
+    # These calls will fail fast with clear error messages if env vars are not set
+    try:
+        _ = get_anthropic_auth_key()
+        _ = get_anthropic_base_url()
+    except SystemExit:
+        # Re-raise the SystemExit from api_config (already has clear error message)
+        raise
 
 
 def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path, execution_model: str):
@@ -373,7 +470,7 @@ def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path
     
     Uses the required execution contract:
     ANTHROPIC_BASE_URL="https://grid.ai.juspay.net" \
-    ANTHROPIC_AUTH_TOKEN="sk-.." \
+    ANTHROPIC_AUTH_TOKEN="sk.." \
     claude --model "<MODEL_NAME>" --prompt-file <PROMPT_PATH>
     
     Raises:
@@ -392,10 +489,10 @@ def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path
     mapped_model = _map_model_name(execution_model)
     print(f"  [Stage 3] Using execution model: {mapped_model}")
     
-    # Set environment variables for Claude Code (explicit injection)
+    # Set environment variables for Claude Code (explicit injection from centralized config)
     env = os.environ.copy()
-    env["ANTHROPIC_BASE_URL"] = "https://grid.ai.juspay.net"
-    env["ANTHROPIC_AUTH_TOKEN"] = "sk-.."
+    env["ANTHROPIC_BASE_URL"] = get_anthropic_base_url()
+    env["ANTHROPIC_AUTH_TOKEN"] = get_anthropic_auth_key()
     
     # Read prompt content and clean it (remove any reasoning/metadata tags)
     prompt_content = prompt_file.read_text(encoding="utf-8")
@@ -430,11 +527,11 @@ def _execute_claude_code(prompt_file: Path, stdout_file: Path, stderr_file: Path
             env=env,
             capture_output=True,
             text=True,
-            timeout=600  # 10 minute timeout
+            timeout=2400  # ~16.7 minute timeout
         )
     except subprocess.TimeoutExpired as e:
         raise RuntimeError(
-            f"Claude Code execution timed out after 600 seconds. "
+            f"Claude Code execution timed out after 1000 seconds. "
             f"This is a CRITICAL execution failure."
         )
     except FileNotFoundError as e:
@@ -577,200 +674,256 @@ def _capture_git_diff(diff_file: Path, context_diff_file: Path):
         print(f"  [Stage 3] Continuing with raw diff only")
 
 
-def _evaluate_solution(templates, pr_metadata: dict, human_patch: str, human_approach_summary: str, 
-                      claude_diff_file: Path, eval_file: Path, client: LLMClient,
-                      human_context_diff_file: Path = None, model_context_diff_file: Path = None):
-    """Evaluate Claude's solution using CONTEXT DIFFS ONLY.
-    
-    This function enforces context-diff-only evaluation:
-    - Raw diffs are kept for logging/debugging only
-    - Only function-level context diffs are used for verdict
-    - Fail fast if context diffs are missing
-    """
-    print("  [Stage 4] Evaluating solution using CONTEXT DIFFS ONLY")
-    
-    # CRITICAL: Validate that context diffs exist
-    if human_context_diff_file is None or not human_context_diff_file.exists():
-        print("  [Stage 4] ERROR: Human context diff is missing - cannot evaluate")
-        # Fallback to FAIL with clear reason
-        verdict_data = {
-            "verdict": "FAIL",
-            "reason": "Evaluation cannot proceed: Human context diff (ground truth) is missing. Context-diff-only evaluation requires both human and model context diffs."
-        }
-        eval_file.write_text(json.dumps(verdict_data, indent=2), encoding="utf-8")
-        print(f"  [Stage 4] Verdict: FAIL (missing human context diff)")
-        return
-    
-    if model_context_diff_file is None or not model_context_diff_file.exists():
-        print("  [Stage 4] ERROR: Model context diff is missing - cannot evaluate")
-        # Fallback to FAIL with clear reason
-        verdict_data = {
-            "verdict": "FAIL",
-            "reason": "Evaluation cannot proceed: Model context diff is missing. This indicates the model made no Python changes or context diff generation failed."
-        }
-        eval_file.write_text(json.dumps(verdict_data, indent=2), encoding="utf-8")
-        print(f"  [Stage 4] Verdict: FAIL (missing model context diff)")
-        return
-    
-    # Load context diffs (authoritative signal for evaluation)
-    human_context_diff = human_context_diff_file.read_text(encoding="utf-8")
-    model_context_diff = model_context_diff_file.read_text(encoding="utf-8")
-    
-    # Validate context diffs are non-empty
-    if not human_context_diff.strip():
-        verdict_data = {
-            "verdict": "FAIL",
-            "reason": "Human context diff is empty. Cannot evaluate without ground truth function-level changes."
-        }
-        eval_file.write_text(json.dumps(verdict_data, indent=2), encoding="utf-8")
-        print(f"  [Stage 4] Verdict: FAIL (empty human context diff)")
-        return
-    
-    if not model_context_diff.strip():
-        verdict_data = {
-            "verdict": "FAIL",
-            "reason": "Model context diff is empty. Model made no function-level changes."
-        }
-        eval_file.write_text(json.dumps(verdict_data, indent=2), encoding="utf-8")
-        print(f"  [Stage 4] Verdict: FAIL (empty model context diff)")
-        return
-    
-    # Read raw diffs for LOGGING ONLY (not used for verdict)
-    claude_patch = claude_diff_file.read_text(encoding="utf-8")
-    
-    print(f"  [Stage 4] Human context diff: {len(human_context_diff)} chars")
-    print(f"  [Stage 4] Model context diff: {len(model_context_diff)} chars")
-    print(f"  [Stage 4] Raw diff (for logging only): {len(claude_patch)} chars")
-    
-    # Build evaluation prompt with CONTEXT DIFFS as authoritative signal
-    eval_replacements = {
-        "PR_TITLE": pr_metadata["PR_TITLE"],
-        "PR_ISSUE_DESCRIPTION": pr_metadata["PR_ISSUE_DESCRIPTION"],
-        "HUMAN_APPROACH_SUMMARY": human_approach_summary,
-        "HUMAN_CONTEXT_DIFF": human_context_diff,  # Function-level ground truth
-        "MODEL_CONTEXT_DIFF": model_context_diff,  # Function-level model changes
-        # Raw diffs for reference only (NOT for scoring)
-        "GROUND_TRUTH_DIFF_TEXT": human_patch,
-        "MODEL_DIFF_TEXT": claude_patch,
-    }
-    
-    eval_prompt = fill_placeholders(templates.evaluation, eval_replacements)
-    
-    print("  [Stage 4] Calling evaluation LLM with context diffs")
-    
-    # Call LLM for evaluation
-    eval_response = client.run(eval_prompt)
-    
-    # Parse verdict from response
-    verdict_data = _parse_verdict(eval_response)
-    
-    # Save evaluation result
-    eval_file.write_text(json.dumps(verdict_data, indent=2), encoding="utf-8")
-    
-    print(f"  [Stage 4] Verdict: {verdict_data['verdict']}")
-    print(f"  [Stage 4] Evaluation saved to {eval_file}")
+def _run_attempts_loop(pr_number: str, run_dir: Path, templates, pr_text: str, human_patch: str,
+                      prompt_gen_client: LLMClient, eval_client: LLMClient, pr_metadata: dict,
+                      human_approach_summary: str, execution_model: str, human_context_diff_file: Path = None,
+                      shared_input_dir: Path = None) -> dict:
+    """Run up to 3 attempts with controlled retries and checkpoint/resume support."""
 
+    # SAFETY FIX: Initialize variables BEFORE any conditional logic (prevents NameError)
+    start_attempt = 1
+    actually_resumed = False
 
-def _parse_verdict(eval_response: str) -> dict:
-    """Parse verdict from LLM evaluation response.
-    
-    Priority order for verdict extraction:
-    1. Explicit "Verdict: PASS" or "Verdict: FAIL" markers
-    2. Last occurrence of PASS/FAIL in the response (typically the conclusion)
-    3. Fallback to UNKNOWN if neither found
-    
-    This ensures that the verdict field is consistent with the reasoning/conclusion.
-    """
-    verdict = "UNKNOWN"
-    reason = eval_response.strip()
-    
-    # Priority 1: Look for explicit "Verdict:" markers (case-insensitive)
-    # This handles cases where LLM explicitly states "Verdict: PASS" or "Verdict: FAIL"
-    verdict_match = re.search(r'Verdict:\s*(PASS|FAIL)', eval_response, re.IGNORECASE)
-    if verdict_match:
-        verdict = verdict_match.group(1).upper()
-        return {"verdict": verdict, "reason": reason}
-    
-    # Priority 2: Find the LAST occurrence of PASS or FAIL in the response
-    # This prioritizes the conclusion over mentions in the summary
-    pass_matches = list(re.finditer(r'\bPASS\b', eval_response, re.IGNORECASE))
-    fail_matches = list(re.finditer(r'\bFAIL\b', eval_response, re.IGNORECASE))
-    
-    last_pass_pos = pass_matches[-1].start() if pass_matches else -1
-    last_fail_pos = fail_matches[-1].start() if fail_matches else -1
-    
-    # The verdict that appears LAST in the text is likely the conclusion
-    if last_fail_pos > last_pass_pos:
-        verdict = "FAIL"
-    elif last_pass_pos > last_fail_pos:
-        verdict = "PASS"
-    
-    # Priority 3: Additional safety check - if reason contains failure keywords
-    # at the end, prioritize FAIL verdict
-    lower_reason = reason.lower()
-    if verdict == "PASS" and any(keyword in lower_reason[-500:] for keyword in 
-                                  ['incomplete implementation', 'would fail', 'critical', 
-                                   'missing', 'incorrect', 'does not work']):
-        # If marked as PASS but conclusion indicates failure, override to FAIL
-        verdict = "FAIL"
-    
-    return {
-        "verdict": verdict,
-        "reason": reason
-    }
+    # Checkpoint detection: Check for previously completed attempts
+    resume_info = get_resume_info(run_dir)
+    last_completed = resume_info.get("last_completed_attempt", 0)  # Default to 0 if not present
 
+    if resume_info["should_resume"]:
+        print(f"[PR {pr_number}] ✓ Checkpoint detected: Found {last_completed} completed attempt(s)")
+        print(f"[PR {pr_number}] ✓ Last verdict: {resume_info['last_verdict']}")
 
-def _run_attempts_loop(pr_number: str, run_dir: Path, templates, pr_text: str, human_patch: str, 
-                      prompt_gen_client: LLMClient, eval_client: LLMClient, pr_metadata: dict, 
-                      human_approach_summary: str, execution_model: str, human_context_diff_file: Path = None) -> dict:
-    """Run up to 3 attempts with controlled retries."""
-    attempts = 0
-    final_verdict = "FAIL"
-    passed_on = None
-    
-    for attempt_num in range(1, 4):  # 1, 2, 3
-        attempts += 1
+        # SAFETY FIX: Resume validation - verify prompt hash, tier, diff hash
+        # This prevents resume with stale/mismatched artifacts
+        # Use explicit validation_passed flag instead of mutating resume_info
+        validation_passed = True
+
+        # Validate prompt hash (if first prompt exists)
+        if shared_input_dir:
+            shared_first_prompt = shared_input_dir / "first_prompt.txt"
+            if shared_first_prompt.exists():
+                current_prompt = shared_first_prompt.read_text(encoding="utf-8")
+                current_prompt_hash = hashlib.sha256(current_prompt.encode()).hexdigest()[:16]
+
+                # Check if checkpointed prompt matches
+                last_attempt_dir = run_dir / f"p{last_completed}"
+                last_prompt_file = last_attempt_dir / f"p{last_completed}_prompt.txt"
+                if last_prompt_file.exists():
+                    last_prompt = last_prompt_file.read_text(encoding="utf-8")
+                    last_prompt_hash = hashlib.sha256(last_prompt.encode()).hexdigest()[:16]
+
+                    if current_prompt_hash != last_prompt_hash and last_completed == 1:
+                        print(f"[PR {pr_number}] ⚠ RESUME ABORTED: Prompt hash mismatch")
+                        print(f"[PR {pr_number}] ⚠ Expected: {last_prompt_hash}, Got: {current_prompt_hash}")
+                        print(f"[PR {pr_number}] ⚠ Restarting from attempt 1 for safety")
+                        validation_passed = False
+
+        # Validate diff hash (ensure ground truth hasn't changed)
+        if validation_passed:
+            current_diff_hash = hashlib.sha256(human_patch.encode()).hexdigest()[:16]
+            last_attempt_dir = run_dir / f"p{last_completed}"
+            last_eval_file = last_attempt_dir / "eval.json"
+            if last_eval_file.exists():
+                last_eval = json.loads(last_eval_file.read_text(encoding="utf-8"))
+                if "human_diff_hash" in last_eval:
+                    if last_eval["human_diff_hash"] != current_diff_hash:
+                        print(f"[PR {pr_number}] ⚠ RESUME ABORTED: Ground truth diff hash mismatch")
+                        print(f"[PR {pr_number}] ⚠ Ground truth may have changed - unsafe to resume")
+                        print(f"[PR {pr_number}] ⚠ Restarting from attempt 1 for safety")
+                        validation_passed = False
+
+        # Validate tier consistency (ensure tier selection is deterministic)
+        if validation_passed:
+            human_context = ""
+            if human_context_diff_file and human_context_diff_file.exists():
+                human_context = human_context_diff_file.read_text(encoding="utf-8")
+            current_tier, _ = _select_diff_tier(human_patch, human_context)
+            last_attempt_dir = run_dir / f"p{last_completed}"
+            last_eval_file = last_attempt_dir / "eval.json"
+            if last_eval_file.exists():
+                last_eval = json.loads(last_eval_file.read_text(encoding="utf-8"))
+                if "tier_used" in last_eval:
+                    if last_eval["tier_used"] != current_tier:
+                        print(f"[PR {pr_number}] ⚠ RESUME ABORTED: Tier mismatch")
+                        print(f"[PR {pr_number}] ⚠ Expected tier {last_eval['tier_used']}, got tier {current_tier}")
+                        print(f"[PR {pr_number}] ⚠ Restarting from attempt 1 for safety")
+                        validation_passed = False
+
+        # Resume validation result - proceed based on validation outcome
+        if not validation_passed:
+            # SAFETY FIX: Reset last_completed to 0 when restarting (prevents incorrect total_attempts)
+            print(f"[PR {pr_number}] ✓ Starting fresh from attempt 1 due to validation failure")
+            start_attempt = 1
+            last_completed = 0
+            actually_resumed = False
+        elif resume_info["last_verdict"] == "PASS":
+            # Last attempt passed, no need to continue
+            print(f"[PR {pr_number}] ✓ Last attempt PASSED - resuming with success (no re-execution)")
+            return {
+                "pr": pr_number,
+                "final_verdict": "PASS",
+                "attempts": last_completed,
+                "passed_on": last_completed,
+                "resumed_from_checkpoint": True
+            }
+        else:
+            # Validate last attempt has proper artifacts
+            last_attempt_dir = run_dir / f"p{last_completed}"
+            if not validate_attempt_artifacts(last_attempt_dir, last_completed):
+                print(f"[PR {pr_number}] ⚠ Warning: Last attempt artifacts incomplete, will re-run from attempt 1")
+                start_attempt = 1
+                last_completed = 0
+                actually_resumed = False
+            else:
+                start_attempt = resume_info["resume_from_attempt"]
+                actually_resumed = True
+                print(f"[PR {pr_number}] ✓ Resuming from attempt {start_attempt}")
+    else:
+        print(f"[PR {pr_number}] No checkpoint found - starting from attempt 1")
+        start_attempt = 1
+        last_completed = 0
+        actually_resumed = False
+
+    # Run attempts from start_attempt to MAX_ATTEMPTS
+    max_attempts = MAX_ATTEMPTS  # SAFETY: Use module constant (defined at top)
+
+    # SAFETY FIX: Initialize per-loop variables (prevent state leakage)
+    # These variables are reset here to ensure no data from previous runs
+    verdicts = []           # Collect all verdicts for deterministic aggregation
+    passed_on = None        # Track which attempt number achieved PASS (if any)
+    last_attempt = start_attempt  # Track the last attempt number executed
+
+    for attempt_num in range(start_attempt, max_attempts + 1):
         print(f"[PR {pr_number}] Attempt {attempt_num}")
-        
-        # Run single attempt
+
+        # Run single attempt - pass shared_input_dir for first prompt reuse
         verdict = _run_single_attempt(
-            pr_number, run_dir, templates, pr_text, human_patch, prompt_gen_client, eval_client, 
-            attempt_num, pr_metadata, human_approach_summary, execution_model, human_context_diff_file
+            pr_number, run_dir, templates, pr_text, human_patch, prompt_gen_client, eval_client,
+            attempt_num, pr_metadata, human_approach_summary, execution_model, human_context_diff_file,
+            shared_input_dir
         )
-        
+
+        last_attempt = attempt_num  # Update last attempted number
+        verdicts.append(verdict)
+
+        # SAFETY FIX: PASS stops retries immediately - success achieved
         if verdict == "PASS":
-            final_verdict = "PASS"
             passed_on = attempt_num
             print(f"[PR {pr_number}] PASS achieved on attempt {attempt_num}")
             break
+
+        # SKIPPED_CONTEXT_OVERFLOW stops retries immediately
+        # Context overflow is an infrastructure limitation that retrying won't fix
+        if verdict == "SKIPPED_CONTEXT_OVERFLOW":
+            print(f"[PR {pr_number}] SKIPPED_CONTEXT_OVERFLOW - stopping retries (infrastructure limitation)")
+            break
+
+        # For all other verdicts (FAIL, FAIL_INFRA, EXECUTION_FAILED, ERROR):
+        # Continue to next attempt up to MAX_ATTEMPTS to collect complete data
+        if verdict in ["FAIL", "FAIL_INFRA", "EXECUTION_FAILED", "ERROR"]:
+            print(f"[PR {pr_number}] Attempt {attempt_num} verdict: {verdict} - continuing to next attempt if available")
         else:
-            print(f"[PR {pr_number}] Attempt {attempt_num} failed")
+            # Unknown verdict - stop retries for safety (should never happen)
+            print(f"[PR {pr_number}] WARNING: Unknown verdict '{verdict}' - stopping retries for safety")
+            break
+
     
+    if actually_resumed:
+        total_attempts = max(last_completed, last_attempt)
+    else:
+        total_attempts = last_attempt
+
+    # ============================================================================
+    # VERDICT AGGREGATION WITH DETERMINISTIC PRIORITY
+    # ============================================================================
+    #
+    # VERDICT_PRIORITY (highest to lowest):
+    # 1. PASS    - Any successful attempt = overall success
+    # 2. FAIL    - Logical failure (model got it wrong)
+    # 3. SKIPPED - Infrastructure limitation (context overflow)
+    # 4. ERROR   - Generic infrastructure failure
+    # 5. FAIL_INFRA - Infrastructure/evaluation failure (lowest priority)
+    # ============================================================================
+
+    # Define verdict priority (first match wins)
+    VERDICT_PRIORITY = ["PASS", "FAIL", "SKIPPED_CONTEXT_OVERFLOW", "ERROR", "FAIL_INFRA", "EXECUTION_FAILED"]
+
+    # Find highest priority verdict present in results
+    final_verdict = None
+    for priority_verdict in VERDICT_PRIORITY:
+        if priority_verdict in verdicts:
+            final_verdict = priority_verdict
+            break
+
+    if final_verdict is None:
+        if verdicts:
+            final_verdict = verdicts[0]
+        else:
+            print(f"[PR {pr_number}] CRITICAL: No verdicts recorded - defaulting to ERROR")
+            final_verdict = "ERROR"
+
+    # SAFETY: Ensure final_verdict is one of the expected values (final validation)
+    valid_verdicts = {"PASS", "FAIL", "FAIL_INFRA", "SKIPPED_CONTEXT_OVERFLOW", "EXECUTION_FAILED", "ERROR"}
+    if final_verdict not in valid_verdicts:
+        print(f"[PR {pr_number}] WARNING: Invalid final verdict '{final_verdict}' - defaulting to ERROR")
+        final_verdict = "ERROR"
+
     return {
         "pr": pr_number,
         "final_verdict": final_verdict,
-        "attempts": attempts,
-        "passed_on": passed_on
+        "attempts": total_attempts,
+        "passed_on": passed_on,
+        "resumed_from_checkpoint": actually_resumed,  # SAFETY FIX: Use actually_resumed flag
+        "all_verdicts": verdicts  # SAFETY: Include all verdicts for traceability
     }
 
 
-def _run_single_attempt(pr_number: str, run_dir: Path, templates, pr_text: str, human_patch: str, 
-                      prompt_gen_client: LLMClient, eval_client: LLMClient, attempt_num: int, 
+def _run_single_attempt(pr_number: str, run_dir: Path, templates, pr_text: str, human_patch: str,
+                      prompt_gen_client: LLMClient, eval_client: LLMClient, attempt_num: int,
                       pr_metadata: dict, human_approach_summary: str, execution_model: str,
-                      human_context_diff_file: Path = None) -> str:
+                      human_context_diff_file: Path = None, shared_input_dir: Path = None) -> str:
     """Run a single attempt: generate prompt, run Claude, evaluate.
-    
+
+    EMPTY_DIFF Retry Logic:
+    - Each attempt (p1, p2, p3) must produce a non-empty diff
+    - If empty diff detected: retry ONCE with forced-change instruction
+    - Retry state tracked in-memory (not via marker files)
+    - Retry prompt saved for traceability but never reused
+
+    SAFETY GUARANTEES:
+    - No exception path returns PASS (only EXECUTION_FAILED, ERROR, or FAIL)
+    - Per-attempt variables are function-scoped (no state leakage between attempts)
+    - Retry can only happen ONCE per attempt (enforced by retry_attempted flag)
+
     Returns:
-        Verdict string: "PASS", "FAIL", or "EXECUTION_FAILED"
+        Verdict string: "PASS", "FAIL", "EXECUTION_FAILED", or "ERROR"
     """
+    retry_attempted = False  # Retry state for empty diff handling (resets per attempt)
     attempt_dir = run_dir / f"p{attempt_num}"
-    attempt_dir.mkdir(exist_ok=True)
-    
-    # Generate prompt for this attempt (ALWAYS uses prompt_gen_client = minimaxai/minimax-m2)
+    attempt_dir.mkdir(parents=True, exist_ok=True)
+
+    # Mark attempt as in-progress
+    mark_attempt_in_progress(attempt_dir)
+    print(f"[PR {pr_number}] ✓ Attempt {attempt_num} marked as in-progress")
+
+    # Generate/load prompt for this attempt
     if attempt_num == 1:
-        # First attempt uses original prompt generation
-        replacements = _build_replacements(pr_text, human_patch, pr_metadata)
-        meta_prompt = fill_placeholders(templates.prompt1, replacements)
+        # First attempt: REUSE shared first prompt (deterministic across all models)
+        if shared_input_dir:
+            shared_first_prompt = shared_input_dir / "first_prompt.txt"
+            if shared_first_prompt.exists():
+                generated_prompt = shared_first_prompt.read_text(encoding="utf-8")
+                print(f"[PR {pr_number}] ✓ Reusing shared first prompt from {shared_first_prompt}")
+            else:
+                # Fallback: Generate if shared prompt doesn't exist (shouldn't happen)
+                print(f"[PR {pr_number}] Warning: Shared first prompt not found, generating new one")
+                replacements = _build_replacements(pr_text, human_patch, pr_metadata)
+                meta_prompt = fill_placeholders(templates.prompt1, replacements)
+                generated_prompt = prompt_gen_client.run(meta_prompt)
+        else:
+            # Fallback for backwards compatibility
+            replacements = _build_replacements(pr_text, human_patch, pr_metadata)
+            meta_prompt = fill_placeholders(templates.prompt1, replacements)
+            generated_prompt = prompt_gen_client.run(meta_prompt)
     else:
         # Subsequent attempts use retry templates with previous attempt data
         previous_attempt_dir = run_dir / f"p{attempt_num - 1}"
@@ -799,17 +952,21 @@ def _run_single_attempt(pr_number: str, run_dir: Path, templates, pr_text: str, 
         else:  # attempt_num == 3
             meta_prompt = fill_placeholders(templates.prompt3, replacements)
     
-    # Generate the actual prompt (using prompt_gen_client = minimaxai/minimax-m2)
-    generated_prompt = prompt_gen_client.run(meta_prompt)
+        # Generate the actual prompt for retry attempts
+        generated_prompt = prompt_gen_client.run(meta_prompt)
     
-    # Save the generated prompt
+    # Save the prompt to attempt directory
     prompt_file = attempt_dir / f"p{attempt_num}_prompt.txt"
     prompt_file.write_text(generated_prompt, encoding="utf-8")
     
     print(f"[PR {pr_number}] Prompt {attempt_num} saved to {prompt_file}")
     
-    # Reset repository before execution
-    _reset_repository()
+    # Reset repository ONLY before first attempt
+    # Subsequent attempts (p2, p3) must build upon changes from previous attempts
+    if attempt_num == 1:
+        _reset_repository()
+    else:
+        print(f"[PR {pr_number}] ✓ Skipping git reset - continuing from previous attempt's changes")
     
     # Execute Claude Code
     stdout_file = attempt_dir / "stdout.txt"
@@ -817,12 +974,10 @@ def _run_single_attempt(pr_number: str, run_dir: Path, templates, pr_text: str, 
     diff_file = attempt_dir / "claude.diff"
     context_diff_file = attempt_dir / "claude_context.diff"
     
-    # Execution with error handling
     try:
         _execute_claude_code(prompt_file, stdout_file, stderr_file, execution_model)
         _capture_git_diff(diff_file, context_diff_file)
     except (RuntimeError, ValueError) as e:
-        # Hard failure on execution errors (Problem 1️⃣)
         error_data = {
             "verdict": "EXECUTION_FAILED",
             "reason": f"Claude Code execution failed: {str(e)}",
@@ -831,7 +986,20 @@ def _run_single_attempt(pr_number: str, run_dir: Path, templates, pr_text: str, 
         error_file = attempt_dir / "eval.json"
         error_file.write_text(json.dumps(error_data, indent=2), encoding="utf-8")
         print(f"[PR {pr_number}] EXECUTION FAILED: {str(e)}")
+        mark_attempt_failed(attempt_dir)
         return "EXECUTION_FAILED"
+    except Exception as e:
+        # SAFETY: Catch-all for unexpected errors - log and return ERROR (never PASS)
+        print(f"[PR {pr_number}] UNEXPECTED ERROR during execution: {type(e).__name__}: {str(e)}")
+        error_data = {
+            "verdict": "ERROR",
+            "reason": f"Unexpected error during execution: {type(e).__name__}: {str(e)}",
+            "error_type": type(e).__name__
+        }
+        error_file = attempt_dir / "eval.json"
+        error_file.write_text(json.dumps(error_data, indent=2), encoding="utf-8")
+        mark_attempt_failed(attempt_dir)
+        return "ERROR"
     
     # CRITICAL: Check if claude.diff is empty or missing (Problem 3️⃣)
     if not diff_file.exists():
@@ -847,27 +1015,164 @@ def _run_single_attempt(pr_number: str, run_dir: Path, templates, pr_text: str, 
     
     diff_content = diff_file.read_text(encoding="utf-8")
     if not diff_content.strip():
-        failure_data = {
-            "verdict": "FAIL",
-            "reason": "Claude Code made no changes (empty diff). This is a FAILED attempt. Silent success is NOT allowed.",
-            "failure_type": "EMPTY_DIFF"
-        }
-        failure_file = attempt_dir / "eval.json"
-        failure_file.write_text(json.dumps(failure_data, indent=2), encoding="utf-8")
-        print(f"[PR {pr_number}] FAILED: claude.diff is empty (no changes made)")
-        return "FAIL"
+        # EMPTY_DIFF detected - check if we can retry (using in-memory state, not marker files)
+        if retry_attempted:
+            # Already retried once for this attempt - hard FAIL (GUARD: prevent retry-on-retry)
+            failure_data = {
+                "verdict": "FAIL",
+                "reason": "Claude Code made no changes (empty diff) even after forced retry. This is a FAILED attempt. Silent success is NOT allowed.",
+                "failure_type": "EMPTY_DIFF",
+                "empty_diff_retry_attempted": True  # Canonical metadata key
+            }
+            failure_file = attempt_dir / "eval.json"
+            failure_file.write_text(json.dumps(failure_data, indent=2), encoding="utf-8")
+            print(f"[PR {pr_number}] FAILED: claude.diff is empty after retry (no changes made)")
+            mark_attempt_failed(attempt_dir)
+            return "FAIL"
+        else:
+            # First time seeing empty diff - retry once with forced-change instruction
+            print(f"[PR {pr_number}] WARNING: Empty diff detected - retrying with forced-change instruction")
+            
+            # Mark that we're retrying (in-memory, not filesystem)
+            retry_attempted = True
+            
+            # Append improved forced-change instruction to the prompt
+            original_prompt = prompt_file.read_text(encoding="utf-8")
+            forced_change_instruction = """
+
+IMPORTANT:
+Your previous run produced no file changes.
+You MUST modify at least one file.
+If no functional change is required, make a minimal but meaningful change such as:
+- adding a clarifying comment
+- adding a TODO
+- adding a validation/assertion
+- a small refactor that improves clarity
+If you believe the code is already correct, add a comment explaining why no further changes are required.
+Do not respond without modifying a file.
+"""
+            retry_prompt = original_prompt + forced_change_instruction
+            
+            # Save retry prompt (for traceability only - NEVER reused for p2/p3)
+            retry_prompt_file = attempt_dir / f"p{attempt_num}_prompt_retry.txt"
+            retry_prompt_file.write_text(retry_prompt, encoding="utf-8")
+            print(f"[PR {pr_number}] Retry prompt saved to {retry_prompt_file} (ephemeral, not reused)")
+            
+            # Execute Claude Code again with retry prompt (NO git reset between runs)
+            # Reuse the same stdout/stderr/diff files (will overwrite)
+            # SAFETY: Same exception handling as main execution
+            try:
+                _execute_claude_code(retry_prompt_file, stdout_file, stderr_file, execution_model)
+                _capture_git_diff(diff_file, context_diff_file)
+            except (RuntimeError, ValueError) as e:
+                # SAFETY: Retry execution failure - return EXECUTION_FAILED (never PASS)
+                error_data = {
+                    "verdict": "EXECUTION_FAILED",
+                    "reason": f"Claude Code retry execution failed: {str(e)}",
+                    "error_type": type(e).__name__,
+                    "empty_diff_retry_attempted": True  # Canonical metadata key
+                }
+                error_file = attempt_dir / "eval.json"
+                error_file.write_text(json.dumps(error_data, indent=2), encoding="utf-8")
+                print(f"[PR {pr_number}] RETRY EXECUTION FAILED: {str(e)}")
+                mark_attempt_failed(attempt_dir)
+                return "EXECUTION_FAILED"
+            except Exception as e:
+                # SAFETY: Unexpected error in retry - return ERROR (never PASS)
+                print(f"[PR {pr_number}] UNEXPECTED ERROR during retry execution: {type(e).__name__}: {str(e)}")
+                error_data = {
+                    "verdict": "ERROR",
+                    "reason": f"Unexpected error during retry execution: {type(e).__name__}: {str(e)}",
+                    "error_type": type(e).__name__,
+                    "empty_diff_retry_attempted": True
+                }
+                error_file = attempt_dir / "eval.json"
+                error_file.write_text(json.dumps(error_data, indent=2), encoding="utf-8")
+                mark_attempt_failed(attempt_dir)
+                return "ERROR"
+            
+            # Check retry result (GUARD: retry can only happen once per attempt)
+            retry_diff_content = diff_file.read_text(encoding="utf-8")
+            if not retry_diff_content.strip():
+                # Retry also produced empty diff - hard FAIL (GUARD ensures this is terminal)
+                failure_data = {
+                    "verdict": "FAIL",
+                    "reason": "Claude Code made no changes (empty diff) even after forced retry. This is a FAILED attempt. Silent success is NOT allowed.",
+                    "failure_type": "EMPTY_DIFF",
+                    "empty_diff_retry_attempted": True  # Canonical metadata key
+                }
+                failure_file = attempt_dir / "eval.json"
+                failure_file.write_text(json.dumps(failure_data, indent=2), encoding="utf-8")
+                print(f"[PR {pr_number}] FAILED: claude.diff is still empty after retry")
+                mark_attempt_failed(attempt_dir)
+                return "FAIL"
+            else:
+                # Retry succeeded - proceed with evaluation
+                print(f"[PR {pr_number}] ✓ EMPTY_DIFF recovered via forced retry ({len(retry_diff_content)} chars)")
+                # Continue to evaluation below (retry_attempted flag will be saved in metadata)
     
-    # Evaluate the solution using CONTEXT DIFFS ONLY (using eval_client = execution model)
+    claude_patch = diff_file.read_text(encoding="utf-8")
+    human_context = ""
+    model_context = ""
+    
+    if human_context_diff_file and human_context_diff_file.exists():
+        human_context = human_context_diff_file.read_text(encoding="utf-8")
+    if context_diff_file and context_diff_file.exists():
+        model_context = context_diff_file.read_text(encoding="utf-8")
+    
+    # Check if Tier-3 will be needed
+    tier, tier_reason = _select_diff_tier(human_patch, human_context)
+    
+    if tier == 3:
+        # Pre-generate and cache Tier-3 summary
+        print(f"  [Stage 3.5] Pre-generating Tier-3 summary (performance optimization)")
+        tier3_summary_file = attempt_dir / "tier3_summary.json"
+        
+        tier3_summary = _generate_tier3_summary(
+            human_patch, claude_patch, human_context, model_context, eval_client
+        )
+        
+        tier3_summary_file.write_text(json.dumps(tier3_summary, indent=2), encoding="utf-8")
+        print(f"  [Stage 3.5] Tier-3 summary cached to {tier3_summary_file}")
+    
+    # SAFETY FIX: Compute diff hash for resume validation
+    human_diff_hash = hashlib.sha256(human_patch.encode()).hexdigest()[:16]
+
+    # Evaluate the solution with dynamic ground-truth selection
     eval_file = attempt_dir / "eval.json"
     _evaluate_solution(
-        templates, pr_metadata, human_patch, human_approach_summary, 
-        diff_file, eval_file, eval_client, 
-        human_context_diff_file, context_diff_file
+        templates, pr_metadata, human_patch, human_approach_summary,
+        diff_file, eval_file, eval_client,
+        human_context_diff_file, context_diff_file,
+        attempt_dir  # Pass attempt_dir for ground-truth metadata persistence
     )
+
+    # SAFETY FIX: Add diff hash to eval.json for resume validation
+    if eval_file.exists():
+        eval_data = json.loads(eval_file.read_text(encoding="utf-8"))
+        eval_data["human_diff_hash"] = human_diff_hash
+        eval_file.write_text(json.dumps(eval_data, indent=2), encoding="utf-8")
     
-    # Return verdict
+    # Read verdict and add retry metadata if applicable
     eval_data = json.loads(eval_file.read_text(encoding="utf-8"))
-    return eval_data['verdict']
+    verdict = eval_data['verdict']
+    
+    # If retry was attempted and succeeded, add metadata to eval.json
+    if retry_attempted:
+        eval_data["empty_diff_retry_attempted"] = True
+        eval_data["empty_diff_recovery_status"] = "recovered" if verdict != "FAIL" else "failed"
+        eval_file.write_text(json.dumps(eval_data, indent=2), encoding="utf-8")
+        print(f"[PR {pr_number}] ✓ Added empty_diff retry metadata to eval.json")
+    
+    # Mark attempt status based on verdict
+    if verdict == "PASS":
+        mark_attempt_completed(attempt_dir)
+        print(f"[PR {pr_number}] ✓ Attempt {attempt_num} marked as completed (PASS)")
+    else:
+        mark_attempt_failed(attempt_dir)
+        print(f"[PR {pr_number}] ✓ Attempt {attempt_num} marked as failed ({verdict})")
+    
+    return verdict
 
 
 def _build_retry_replacements(pr_text: str, human_patch: str, previous_diff: str, previous_reason: str, 
