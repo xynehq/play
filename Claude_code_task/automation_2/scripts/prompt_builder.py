@@ -12,6 +12,7 @@ SECTION_MARKERS = {
     "prompt1": "Prompt to get First Prompt",
     "prompt2": "Prompt to get Second and Third Prompt",
     "evaluation": "Summarize Claude Code's approach, compare with real changes, and decide Pass/Fail",
+    "behavioral_summary": "TIER 3 BEHAVIORAL SUMMARY PROMPT",
 }
 
 
@@ -22,6 +23,7 @@ class Templates:
     prompt2: str
     prompt3: str
     evaluation: str
+    behavioral_summary: str
 
 
 def _split_sections(raw: str) -> Dict[str, str]:
@@ -54,7 +56,7 @@ def load_templates(template_path: Path) -> Templates:
     """
     raw = template_path.read_text(encoding="utf-8")
     sections = _split_sections(raw)
-    
+
     required = ["human_approach", "prompt1", "prompt2", "evaluation"]
     missing = [k for k in required if k not in sections]
     if missing:
@@ -62,13 +64,15 @@ def load_templates(template_path: Path) -> Templates:
 
     # prompt2 and prompt3 share the same template (iterative improvement)
     prompt2_text = sections.get("prompt2", "")
-    
+    behavioral_summary_text = sections.get("behavioral_summary", "")
+
     return Templates(
         human_approach=sections["human_approach"],
         prompt1=sections["prompt1"],
         prompt2=prompt2_text,
-        prompt3=prompt2_text,  # Same template for both iterative prompts
+        prompt3=prompt2_text,
         evaluation=sections["evaluation"],
+        behavioral_summary=behavioral_summary_text,
     )
 
 
