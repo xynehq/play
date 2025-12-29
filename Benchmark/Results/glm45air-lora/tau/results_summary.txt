@@ -1,0 +1,2 @@
+airline: 0.5200
+retail: 0.5739
