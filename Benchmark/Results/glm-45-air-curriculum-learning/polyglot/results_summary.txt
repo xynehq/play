@@ -1,0 +1,30 @@
+──── /benchmarks/2025-12-26-08-40-20--glm-45-air-curriculum-learning-whole ─────
+- dirname: 2025-12-26-08-40-20--glm-45-air-curriculum-learning-whole
+  test_cases: 225
+  model: openai/glm-45-air-curriculum-learning
+  edit_format: whole
+  commit_hash: 1354e0b-dirty
+  pass_rate_1: 12.0
+  pass_rate_2: 35.1
+  pass_num_1: 27
+  pass_num_2: 79
+  percent_cases_well_formed: 96.4
+  error_outputs: 34
+  num_malformed_responses: 34
+  num_with_malformed_responses: 8
+  user_asks: 117
+  lazy_comments: 0
+  syntax_errors: 0
+  indentation_errors: 0
+  exhausted_context_windows: 0
+  prompt_tokens: 1780368
+  completion_tokens: 1870054
+  test_timeouts: 0
+  total_tests: 225
+  command: aider --model openai/glm-45-air-curriculum-learning
+  date: 2025-12-26
+  versions: 0.86.2.dev
+  seconds_per_case: 623.4
+  total_cost: 0.0000
+
+costs: $0.0000/test-case, $0.00 total, $0.00 projected
