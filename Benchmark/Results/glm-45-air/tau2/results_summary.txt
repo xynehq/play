@@ -1,0 +1,5 @@
+Mock	0.7778
+Airline	0.5000
+Retail	0.7456
+Telecom	0.3421
+Average	0.5914
