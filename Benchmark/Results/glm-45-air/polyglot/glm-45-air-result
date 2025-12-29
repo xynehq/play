@@ -1,0 +1,40 @@
+# Benchmark Results: GLM-4.5-Air (Whole Edit Format)
+
+## Overview
+- **Model**: openai/glm-45-air
+- **Edit Format**: whole
+- **Date**: 2025-12-03
+- **Test Cases**: 225
+- **Aider Version**: 0.86.2.dev
+
+## Performance Metrics
+
+### Pass Rates
+- **Pass Rate 1**: 2.2% (5/225 cases)
+- **Pass Rate 2**: 6.2% (14/225 cases)
+
+### Code Quality
+- **Well-formed Responses**: 100.0%
+- **Syntax Errors**: 0
+- **Indentation Errors**: 0
+- **Malformed Responses**: 0
+- **Error Outputs**: 0
+
+### Resource Usage
+- **Prompt Tokens**: 314,842
+- **Completion Tokens**: 199,299
+- **Seconds per Case**: 136.0
+- **Test Timeouts**: 0
+- **Exhausted Context Windows**: 0
+
+### User Interaction
+- **User Asks**: 23
+- **Lazy Comments**: 0
+
+## Cost Analysis
+- **Cost per Test Case**: $0.0000
+- **Total Cost**: $0.00
+- **Projected Cost**: $0.00
+
+## Summary
+The GLM-4.5-Air model with whole edit format achieved a 2.2% initial pass rate and 6.2% secondary pass rate across 225 test cases. While the pass rates are relatively low, the model demonstrated excellent code quality with 100% well-formed responses and zero syntax or indentation errors. The benchmark ran without any timeouts or context window exhaustion issues.
