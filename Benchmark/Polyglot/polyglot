@@ -234,24 +234,6 @@ else:
     print("🔄 Updating repository...")
     run(["git", "pull"], cwd=str(aider_dir))
 
-# Patch requirements.txt to use compatible litellm version
-requirements_path = aider_dir / "requirements.txt"
-if requirements_path.exists():
-    print("🔧 Patching requirements.txt to use litellm<1.53 for compatibility...")
-    requirements_content = requirements_path.read_text()
-    
-    # Replace any litellm line with litellm<1.53
-    import re
-    modified_requirements = re.sub(
-        r'^litellm[>=<\d.\s]*$',
-        'litellm<1.53',
-        requirements_content,
-        flags=re.MULTILINE
-    )
-    
-    requirements_path.write_text(modified_requirements)
-    print("✅ requirements.txt patched successfully")
-    print("   Changed: litellm version → litellm<1.53")
 
 # Create benchmarks directory
 benchmarks_dir = aider_dir / "tmp.benchmarks"
