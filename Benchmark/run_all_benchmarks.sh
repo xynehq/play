@@ -215,7 +215,7 @@ print_status "Setting up Polyglot window..."
 tmux new-window -t benchmarks:3 -n "Polyglot"
 
 # Polyglot command
-POLYGLOT_CMD="cd Polyglot && ./polyglot"
+POLYGLOT_CMD="cd Polyglot && python3 -m venv venv && source venv/bin/activate && pip install pyyaml && ./polyglot"
 
 # Send Polyglot command
 send_command "benchmarks" "3" "0" "$POLYGLOT_CMD"
@@ -241,7 +241,7 @@ print_status "Setting up Archit-Eval window..."
 tmux new-window -t benchmarks:5 -n "Archit-Eval"
 
 # Archit-Eval command
-ARCHIT_EVAL_CMD="cd Archit-Eval && python3 -m venv venv && source venv/bin/activate && pip install openai pyyaml && python3 script.py"
+ARCHIT_EVAL_CMD="cd Archit-Eval && python3 -m venv venv && source venv/bin/activate && pip install openai pyyaml requests datasets && python3 script.py"
 
 # Send Archit-Eval command
 send_command "benchmarks" "5" "0" "$ARCHIT_EVAL_CMD"
@@ -251,7 +251,7 @@ tmux select-pane -t benchmarks:5.0 -T "Archit-Eval"
 
 # Create RustEvo window with single pane
 print_status "Setting up RustEvo window..."
-tmux new-window -t benchmarks:5 -n "RustEvo"
+tmux new-window -t benchmarks:6 -n "RustEvo"
 
 # RustEvo command
 RUSTEVO_CMD="cd RustEvo && python3 -m venv venv && source venv/bin/activate && pip install openai pyyaml && python3 setup.py"
@@ -261,6 +261,22 @@ send_command "benchmarks" "6" "0" "$RUSTEVO_CMD"
 
 # Set pane title for RustEvo
 tmux select-pane -t benchmarks:6.0 -T "RustEvo"
+
+
+# Create SWE-Bench window with single pane
+print_status "Setting up SWE-Bench window..."
+tmux new-window -t benchmarks:7 -n "SWE-Bench"
+
+# SWE-Bench command
+SWE_BENCH_CMD="cd SWE-Bench && source /mnt/storage/openhands_workspace/venv_openhands/bin/activate && python3 script.py"
+
+# Send SWE-Bench command
+send_command "benchmarks" "7" "0" "$SWE_BENCH_CMD"
+
+# Set pane title for SWE-Bench
+tmux select-pane -t benchmarks:7.0 -T "SWE-Bench"
+
+
 # Select first window and attach to session
 tmux select-window -t benchmarks:1
 tmux attach-session -t benchmarks

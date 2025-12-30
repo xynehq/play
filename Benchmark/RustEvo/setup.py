@@ -329,8 +329,8 @@ def interactive_mode():
         yaml_data = yaml.safe_load(f)
         choice = yaml_data.get('rust_evo_setup', 1)
         model = yaml_data.get('model_name')
-        workers_rq1 = yaml_data.get('workers', 8)
-        workers_rq3 = yaml_data.get('workers', 8)
+        workers_rq1 = yaml_data.get('workers_rq1', 8)
+        workers_rq3 = yaml_data.get('workers_rq3', 8)
     if choice == 1:
         install_rust()
         install_python_deps()
@@ -378,7 +378,7 @@ def interactive_mode():
         print_error("Invalid option. Please select 1-6.")
     
     print()
-    os.system('clear' if os.name == 'posix' else 'cls')
+    # os.system('clear' if os.name == 'posix' else 'cls')
 
 def main():
     """Main entry point"""
