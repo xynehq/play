@@ -199,8 +199,7 @@ def run_rq1(model="kat-dev-hs-72b", max_workers=8):
     print_info(f"Max Workers: {max_workers}")
     print_info("This may take a while depending on the number of tasks...")
     
-    api_key = os.environ.get('API_KEY', '')
-    base_url = os.environ.get('BASE_URL', '')
+    api_key, base_url = get_api_credentials()
     
     # Save current directory
     original_dir = os.getcwd()
@@ -213,7 +212,7 @@ def run_rq1(model="kat-dev-hs-72b", max_workers=8):
             "python3", "script /eval_models_rq1.py",
             "--file_a", "RustEvo/Dataset/RustEvo^2.json",
             "--file_b", "RustEvo/Dataset/APIDocs.json",
-            "--output", "RustEvo/Results/rq1_results.json",
+            "--output", "Results/rq1_results.json",
             "--models", model,
             "--max_workers", str(max_workers),
             "--api_key", api_key,
@@ -224,8 +223,8 @@ def run_rq1(model="kat-dev-hs-72b", max_workers=8):
         
         if result and result.returncode == 0:
             print_success("RQ1 evaluation completed successfully!")
-            print_info(f"Results saved to: RustEvo/Results/rq1_results.json")
-            print_info(f"Metrics saved to: RustEvo/Results/rq1_results_metrics.json")
+            print_info(f"Results saved to: Results/rq1_results.json")
+            print_info(f"Metrics saved to: Results/rq1_results_metrics.json")
             return True
         else:
             print_error("RQ1 evaluation failed")
@@ -242,8 +241,7 @@ def run_rq3(model="kat-dev-hs-72b", max_workers=8):
     print_info(f"Max Workers: {max_workers}")
     print_info("This may take a while depending on the number of tasks...")
     
-    api_key = os.environ.get('API_KEY', '')
-    base_url = os.environ.get('BASE_URL', '')
+    api_key, base_url = get_api_credentials()
     
     # Save current directory
     original_dir = os.getcwd()
@@ -256,7 +254,7 @@ def run_rq3(model="kat-dev-hs-72b", max_workers=8):
             "python3", "script /eval_models_rq3.py",
             "--file_a", "RustEvo/Dataset/RustEvo^2.json",
             "--file_b", "RustEvo/Dataset/APIDocs.json",
-            "--output", "RustEvo/Results/rq3_results.json",
+            "--output", "Results/rq3_results.json",
             "--models", model,
             "--max_workers", str(max_workers),
             "--api_key", api_key,
@@ -267,8 +265,8 @@ def run_rq3(model="kat-dev-hs-72b", max_workers=8):
         
         if result and result.returncode == 0:
             print_success("RQ3 evaluation completed successfully!")
-            print_info(f"Results saved to: RustEvo/Results/rq3_results.json")
-            print_info(f"Metrics saved to: RustEvo/Results/rq3_results_metrics.json")
+            print_info(f"Results saved to: Results/rq3_results.json")
+            print_info(f"Metrics saved to: Results/rq3_results_metrics.json")
             return True
         else:
             print_error("RQ3 evaluation failed")
@@ -325,6 +323,14 @@ def interactive_mode():
     model=""
     workers_rq1=8
     workers_rq3=8
+    
+    script_dir = Path(__file__).resolve().parent
+
+    # Create Results directory at the same level as setup.py
+    results_dir = script_dir / "Results"
+    results_dir.mkdir(exist_ok=True)
+
+
     with open(config_file, 'r') as f:
         yaml_data = yaml.safe_load(f)
         choice = yaml_data.get('rust_evo_setup', 1)
