@@ -57,7 +57,7 @@ class FullPipelineRunner:
         if base_dir:
             self.base_dir = Path(base_dir).resolve()
         else:
-            storage_mount = Path("/mnt/storage")
+            storage_mount = Path(__file__).resolve().parent
             if storage_mount.exists():
                 self.base_dir = storage_mount / "openhands_workspace"
             else:
@@ -783,7 +783,7 @@ def main():
             print("Usage: python3 run_full_pipeline.py [eval_limit] [base_dir]")
             print("\nArguments:")
             print("  eval_limit: Number of instances to evaluate (default: 500)")
-            print("  base_dir: Base directory for OpenHands (default: /mnt/storage/openhands_workspace)")
+            print("  base_dir: Base directory for OpenHands (default: ./openhands_workspace )")
             print("\nExample:")
             print("  python3 run_full_pipeline.py 10")
             print("  python3 run_full_pipeline.py 50 /path/to/workspace")
