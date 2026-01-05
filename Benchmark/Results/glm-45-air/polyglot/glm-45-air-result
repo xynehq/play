@@ -1,40 +1,30 @@
-# Benchmark Results: GLM-4.5-Air (Whole Edit Format)
+────────────── /benchmarks/2025-12-31-14-21-44--glm-45-air-whole ───────────────
+- dirname: 2025-12-31-14-21-44--glm-45-air-whole
+  test_cases: 225
+  model: openai/glm-45-air
+  edit_format: whole
+  commit_hash: 1354e0b-dirty
+  pass_rate_1: 5.3
+  pass_rate_2: 19.6
+  pass_num_1: 12
+  pass_num_2: 44
+  percent_cases_well_formed: 100.0
+  error_outputs: 0
+  num_malformed_responses: 0
+  num_with_malformed_responses: 0
+  user_asks: 49
+  lazy_comments: 0
+  syntax_errors: 0
+  indentation_errors: 0
+  exhausted_context_windows: 0
+  prompt_tokens: 873120
+  completion_tokens: 829181
+  test_timeouts: 2
+  total_tests: 225
+  command: aider --model openai/glm-45-air
+  date: 2025-12-31
+  versions: 0.86.2.dev
+  seconds_per_case: 368.4
+  total_cost: 0.0000
 
-## Overview
-- **Model**: openai/glm-45-air
-- **Edit Format**: whole
-- **Date**: 2025-12-03
-- **Test Cases**: 225
-- **Aider Version**: 0.86.2.dev
-
-## Performance Metrics
-
-### Pass Rates
-- **Pass Rate 1**: 2.2% (5/225 cases)
-- **Pass Rate 2**: 6.2% (14/225 cases)
-
-### Code Quality
-- **Well-formed Responses**: 100.0%
-- **Syntax Errors**: 0
-- **Indentation Errors**: 0
-- **Malformed Responses**: 0
-- **Error Outputs**: 0
-
-### Resource Usage
-- **Prompt Tokens**: 314,842
-- **Completion Tokens**: 199,299
-- **Seconds per Case**: 136.0
-- **Test Timeouts**: 0
-- **Exhausted Context Windows**: 0
-
-### User Interaction
-- **User Asks**: 23
-- **Lazy Comments**: 0
-
-## Cost Analysis
-- **Cost per Test Case**: $0.0000
-- **Total Cost**: $0.00
-- **Projected Cost**: $0.00
-
-## Summary
-The GLM-4.5-Air model with whole edit format achieved a 2.2% initial pass rate and 6.2% secondary pass rate across 225 test cases. While the pass rates are relatively low, the model demonstrated excellent code quality with 100% well-formed responses and zero syntax or indentation errors. The benchmark ran without any timeouts or context window exhaustion issues.
+costs: $0.0000/test-case, $0.00 total, $0.00 projected
