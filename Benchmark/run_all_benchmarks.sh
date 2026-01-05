@@ -113,6 +113,44 @@ else
     FORMATTED_MODEL_NAME="$MODEL_NAME"
 fi
 
+# Setup OpenHands workspace before running benchmarks
+print_status "Setting up OpenHands workspace..."
+
+# Create openhands_workspace directory in SWE-Bench if it doesn't exist
+if [ ! -d "SWE-Bench/openhands_workspace" ]; then
+    print_status "Creating openhands_workspace directory..."
+    mkdir -p SWE-Bench/openhands_workspace
+fi
+
+# Clone OpenHands repo if it doesn't exist
+if [ ! -d "SWE-Bench/openhands_workspace/OpenHands" ]; then
+    print_status "Cloning OpenHands repository..."
+    cd SWE-Bench/openhands_workspace
+    git clone https://github.com/OpenHands/OpenHands
+    cd ../..
+    print_success "OpenHands repository cloned successfully"
+else
+    print_status "OpenHands repository already exists"
+fi
+
+# Setup virtual environment for OpenHands
+if [ ! -d "SWE-Bench/openhands_workspace/venv" ]; then
+    print_status "Creating virtual environment for OpenHands..."
+    python3 -m venv SWE-Bench/openhands_workspace/venv
+    # Install OpenHands in the virtual environment
+    print_status "Installing OpenHands in virtual environment..."
+    cd SWE-Bench/openhands_workspace/OpenHands
+    source ../venv/bin/activate
+    python -m pip install -e .
+    deactivate
+    cd ../../..
+    print_success "Virtual environment created"
+else
+    print_status "Virtual environment already exists"
+fi
+
+print_success "OpenHands setup completed successfully"
+
 # Check if directories exist
 if [ ! -d "tau-bench" ]; then
     print_error "tau-bench directory not found"
@@ -268,7 +306,7 @@ print_status "Setting up SWE-Bench window..."
 tmux new-window -t benchmarks:7 -n "SWE-Bench"
 
 # SWE-Bench command
-SWE_BENCH_CMD="cd SWE-Bench && source /mnt/storage/openhands_workspace/venv_openhands/bin/activate && python3 script.py"
+SWE_BENCH_CMD="cd SWE-Bench && source ./openhands_workspace/venv/bin/activate && pip install datasets && python3 script.py"
 
 # Send SWE-Bench command
 send_command "benchmarks" "7" "0" "$SWE_BENCH_CMD"
