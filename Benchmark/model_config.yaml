@@ -2,42 +2,56 @@
 # This file contains model details for benchmark testing
 
 # API Configuration
-api_base: "API_BASE"  # e.g., "https://api.yourmodel.com/v1"
-
-# Model Names - choose which model to test
-model_name: "glm-latest"
-
+api_base: "https:"  # e.g., "https://api.yourmodel.com/v1"
 
 # API Authentication (optional)
-api_key: "sk-xyz"  # Leave blank if not required
+api_key: ""  # Leave blank if not required
+model_name: "glm-"  # Default model name
 
 # Benchmark Settings
-benchmark:
-  edit_format: "whole"  # Options: whole, diff, udiff
-  threads: 1           # Number of parallel threads
+#Config for Polyglot Benchmark
+polyglot_config:
+  model_name: "glm-"  # Model to use for Polyglot benchmark
+  edit_format: "whole"  # Options: whole, diff, udiff for Polyglot
+  threads: 1           # Number of parallel threads   
   tries: 2             # Number of retries per test
   num_tests: null       # Number of tests to run (null for all)
   language: "1"       # Options: 1. All languages, 2. C++, 3. Go, 4. Java, 5. JavaScript, 6. Python, 7. Rust
-  keywords: null        # Additional keyword filter (optional)
+  keywords: null        # Additional keyword filter (optional)  
+  model_settings: ""  # Path to model settings file (optional)
 
-max_iterations: 100 #For SWE-Bench
-temperature: 0.0     
-top_p: 0.95         
 
-k_values: [1] # For Archit Eval
-archit_n: 1 # For Archit Eval
-archit_dataset: "archit11/evals"
-max_examples: 300 # For Archit Eval
-max_tokens: 2048 # For Archit Eval
-archit_split: "train" # For Archit Eval
-archit_output: "eval_results_litellm.json" # For Archit Eval
+#Config for Archit Eval
+archit_config:
+  model_name: "glm-"  # Model to use for Archit Eval
+  temperature: 0.0     # Sampling temperature
+  top_p: 0.95          # Nucleus sampling parameter
+  k_values: [1]        # List of k values for evaluation
+  archit_n: 1          # Number of samples per example
+  archit_dataset: "archit11/evals"  # Dataset to use
+  max_examples: 300    # Maximum number of examples to evaluate
+  max_tokens: 2048     # Maximum tokens per input
+  archit_split: "train"  # Dataset split to use (train/validation/test)
+  archit_output: "eval_results_litellm.json"  # Output file for results
 
-rust_evo_setup: 1 # For RustEvo setup 
-    # 1. Full Setup (Install dependencies + Run both RQ1 & RQ3)
-    # 2. Install Dependencies Only
-    # 3. Run RQ1 Only (Full Documentation)
-    # 4. Run RQ3 Only (Minimal Documentation)
-    # 5. Run Both RQ1 & RQ3
-    # 6. Exit
-workers_rq1: 8     # For RustEvo setup
-workers_rq3: 8     # For RustEvo setup
+    
+
+#Config for SWE-Bench
+swe_config:
+  model_name: "glm-"  # Model to use for SWE-Bench
+  max_iterations: 100  # Maximum iterations for SWE-Bench
+  temperature: 0.0     # Sampling temperature
+  top_p: 0.95          # Nucleus sampling parameter
+
+#Config for RustEvo Benchmark
+rust_evo_config:
+  model_name: "glm-"  # Model to use for RustEvo benchmark
+  rust_evo_setup: 1 # For RustEvo setup 
+      # 1. Full Setup (Install dependencies + Run both RQ1 & RQ3)
+      # 2. Install Dependencies Only
+      # 3. Run RQ1 Only (Full Documentation)
+      # 4. Run RQ3 Only (Minimal Documentation)
+      # 5. Run Both RQ1 & RQ3
+      # 6. Exit
+  workers_rq1: 1     # For RustEvo setup
+  workers_rq3: 1     # For RustEvo setup

@@ -336,28 +336,28 @@ def main() -> None:
     config_file = Path(config_path)
     with open(config_file, 'r') as f:
         yaml_data = yaml.safe_load(f)
-
-        k_values = yaml_data.get('k_values')
-        k_values = [k for k in k_values if k <= yaml_data.get('archit_n')]
+        archit_config = yaml_data.get('archit_config', {})
+        k_values = archit_config.get('k_values')
+        k_values = [k for k in k_values if k <= archit_config.get('archit_n')]
         logging.info(f"Computing pass@k for k={k_values}")
 
-        dataset = load_dataset_safely(yaml_data.get('archit_dataset'), yaml_data.get('archit_split'))
+        dataset = load_dataset_safely(archit_config.get('archit_dataset'), archit_config.get('archit_split'))
 
         results = evaluate_with_api(
             dataset=dataset,
             api_url=yaml_data.get('api_base'),
             api_key=yaml_data.get('api_key'),
-            model=yaml_data.get('model_name'),
-            n=yaml_data.get('archit_n',8),
-            max_examples=yaml_data.get('max_examples', 300),
-            temperature=yaml_data.get('temperature', 0.8),
-            top_p=yaml_data.get('top_p', 0.95),
-            max_tokens=yaml_data.get('max_tokens', 2048),
+            model=archit_config.get('model_name'),
+            n=archit_config.get('archit_n',8),
+            max_examples=archit_config.get('max_examples', 300),
+            temperature=archit_config.get('temperature', 0.0),
+            top_p=archit_config.get('top_p', 0.95),
+            max_tokens=archit_config.get('max_tokens', 2048),
         )
 
         summary = aggregate_metrics(results, k_values)
         print_summary(summary)
-        save_results(results, summary, yaml_data.get('archit_output'))
+        save_results(results, summary, archit_config.get('archit_output'))
 
         logging.info("\nSample predictions (first 3 examples):")
         for r in results[:3]:

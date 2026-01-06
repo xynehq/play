@@ -333,10 +333,11 @@ def interactive_mode():
 
     with open(config_file, 'r') as f:
         yaml_data = yaml.safe_load(f)
-        choice = yaml_data.get('rust_evo_setup', 1)
-        model = yaml_data.get('model_name')
-        workers_rq1 = yaml_data.get('workers_rq1', 8)
-        workers_rq3 = yaml_data.get('workers_rq3', 8)
+        rust_evo_config = yaml_data.get('rust_evo_config', {})
+        choice = rust_evo_config.get('rust_evo_setup', 1)
+        model = rust_evo_config.get('model_name')
+        workers_rq1 = rust_evo_config.get('workers_rq1', 8)
+        workers_rq3 = rust_evo_config.get('workers_rq3', 8)
     if choice == 1:
         install_rust()
         install_python_deps()

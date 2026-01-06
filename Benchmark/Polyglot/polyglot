@@ -345,9 +345,10 @@ config_path = Path(Path(__file__).parent.parent / "model_config.yaml")
 config_file = Path(config_path)
 with open(config_file, 'r') as f:
     yaml_data = yaml.safe_load(f)
+    polyglot_config=yaml_data.get("polyglot_config", {})
     print("\n🤖 Model Configuration:")
     print("Enter the model name you want to benchmark.")
-    config["model"]=yaml_data.get("model_name")
+    config["model"]=polyglot_config.get("model_name")
     if not config["model"]:
         print("❌ Model name is required!")
         sys.exit(1)
@@ -397,16 +398,14 @@ with open(config_file, 'r') as f:
 
     # Edit format selection
     print("\n✏️  Edit Format:")
-    bench = yaml_data.get("benchmark", {})
-
-    config["edit_format"]=bench.get("edit_format","whole")
+    config["edit_format"]=polyglot_config.get("edit_format","whole")
 # Thread configuration
-    threads_input = bench.get("threads","10")
+    threads_input = polyglot_config.get("threads","10")
     if threads_input:
         config["threads"] = int(threads_input)
 
 # Number of tests
-    num_tests = bench.get("num_tests", "")
+    num_tests = polyglot_config.get("num_tests", "")
     if num_tests:
         config["num_tests"] = int(num_tests)
 
@@ -421,7 +420,7 @@ with open(config_file, 'r') as f:
     print("6. Python")
     print("7. Rust")
 
-    language_choice = bench.get("language","1").strip()
+    language_choice = polyglot_config.get("language","1").strip()
 
     # Map language choices to directory names
     language_map = {
@@ -441,7 +440,7 @@ with open(config_file, 'r') as f:
         print("✅ Using all languages")
 
     # Additional keywords filter
-    additional_keywords = yaml_data.get("keywords", "").strip()
+    additional_keywords = polyglot_config.get("keywords", "").strip()
     if additional_keywords:
         if "keywords" in config:
             config["keywords"] = f"{config['keywords']}.*{additional_keywords}"
@@ -449,7 +448,7 @@ with open(config_file, 'r') as f:
             config["keywords"] = additional_keywords
 
     # Model settings file
-    model_settings = bench.get("model_settings", "").strip()
+    model_settings = polyglot_config.get("model_settings", "").strip()
     if model_settings and Path(model_settings).exists():
         config["model_settings"] = model_settings
 

@@ -156,8 +156,8 @@ class FullPipelineRunner:
                 api_key = "EMPTY"
         
             # Get model name
-
-            model_name = yaml_data.get('model_name', '').strip()
+            swe_config = yaml_data.get('swe_config', {})
+            model_name = swe_config.get('model_name', '').strip()
             if not model_name:
                 self.print_error("Model name is required")
                 return None
@@ -181,19 +181,19 @@ class FullPipelineRunner:
                 self.print_success(f"Model name updated to: {model_name}")
         
             # Get max iterations
-            max_iterations = yaml_data.get('max_iterations', 100)
+            max_iterations = swe_config.get('max_iterations', 100)
             
  
             
             # Get temperature
-            temperature = yaml_data.get('temperature', 0.0)
+            temperature = swe_config.get('temperature', 0.0)
             
             
             # Get top_p
             print(f"\n{Colors.BOLD}6. Top P (optional){Colors.NC}")
             print(f"{Colors.CYAN}   Nucleus sampling threshold (0.0 to 1.0)")
             print(f"{Colors.CYAN}   Lower = more focused, higher = more diverse (default: 0.95)")
-            top_p = yaml_data.get('top_p', 0.95)
+            top_p = swe_config.get('top_p', 0.95)
             
             # Summary
             print(f"\n{Colors.BOLD}Configuration Summary:{Colors.NC}")
