@@ -172,14 +172,49 @@ if [ ! -d "hyperswitch-benchmark" ]; then
     exit 1
 fi
 
-# Check if virtual environments exist
-if [ ! -d "tau-bench/venv" ]; then
-    print_warning "tau-bench/venv not found. Please ensure virtual environment is set up."
-fi
+# Function to setup tau-bench environment
+setup_tau_bench() {
+    local tau_dir="tau-bench/tau-bench-repo"
+    local venv_dir="$tau_dir/.venv"
+    
+    if [ ! -d "$venv_dir" ]; then
+        print_status "Setting up tau-bench virtual environment..."
+        cd "$tau_dir"
+        python3 -m venv .venv
+        source .venv/bin/activate
+        print_status "Installing tau dependencies..."
+        pip install -e . -q
+        cd - > /dev/null
+        print_success "tau-bench environment setup complete"
+    else
+        print_status "tau-bench virtual environment already exists"
+    fi
+}
 
-if [ ! -d "tau2-bench/venv" ]; then
-    print_warning "tau2-bench/venv not found. Please ensure virtual environment is set up."
-fi
+# Function to setup tau2-bench environment
+setup_tau2_bench() {
+    local tau2_dir="tau2-bench/tau2-bench-repo"
+    local venv_dir="$tau2_dir/.venv"
+    
+    if [ ! -d "$venv_dir" ]; then
+        print_status "Setting up tau2-bench virtual environment..."
+        cd "$tau2_dir"
+        python3 -m venv .venv
+        source .venv/bin/activate
+        print_status "Installing tau2 dependencies..."
+        pip install -e . -q
+        cd - > /dev/null
+        print_success "tau2-bench environment setup complete"
+    else
+        print_status "tau2-bench virtual environment already exists"
+    fi
+}
+
+# Setup tau-bench environment automatically
+setup_tau_bench
+
+# Setup tau2-bench environment automatically
+setup_tau2_bench
 
 # Clean up existing tmux session if it exists
 if tmux has-session -t benchmarks 2>/dev/null; then
@@ -207,9 +242,9 @@ tmux new-window -t benchmarks:1 -n "Tau"
 tmux split-window -h
 
 # Tau commands
-TAU_AIRLINE_CMD="cd tau-bench && source venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" python3 run.py --env airline --model \"$FORMATTED_MODEL_NAME\" --model-provider openai --user-model \"$FORMATTED_MODEL_NAME\" --user-model-provider openai --agent-strategy tool-calling --max-concurrency 3"
+TAU_AIRLINE_CMD="cd tau-bench/tau-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" python3 run.py --env airline --model \"$FORMATTED_MODEL_NAME\" --model-provider openai --user-model \"$FORMATTED_MODEL_NAME\" --user-model-provider openai --agent-strategy tool-calling --max-concurrency 3"
 
-TAU_RETAIL_CMD="cd tau-bench && source venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" python3 run.py --env retail --model \"$FORMATTED_MODEL_NAME\" --model-provider openai --user-model \"$FORMATTED_MODEL_NAME\" --user-model-provider openai --agent-strategy tool-calling --max-concurrency 3"
+TAU_RETAIL_CMD="cd tau-bench/tau-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" python3 run.py --env retail --model \"$FORMATTED_MODEL_NAME\" --model-provider openai --user-model \"$FORMATTED_MODEL_NAME\" --user-model-provider openai --agent-strategy tool-calling --max-concurrency 3"
 
 # Send Tau commands
 send_command "benchmarks" "1" "0" "$TAU_AIRLINE_CMD"
@@ -228,13 +263,13 @@ tmux select-pane -t benchmarks:2.0
 tmux split-window -v
 
 # Tau2 commands
-TAU2_RETAIL_CMD="cd tau2-bench && source venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain retail --agent-llm \"$FORMATTED_MODEL_NAME\" --user-llm \"$FORMATTED_MODEL_NAME\" --max-concurrency 3"
+TAU2_RETAIL_CMD="cd tau2-bench/tau2-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain retail --agent-llm \"$FORMATTED_MODEL_NAME\" --user-llm \"$FORMATTED_MODEL_NAME\" --max-concurrency 3"
 
-TAU2_AIRLINE_CMD="cd tau2-bench && source venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain airline --agent-llm \"$FORMATTED_MODEL_NAME\" --user-llm \"$FORMATTED_MODEL_NAME\" --max-concurrency 3"
+TAU2_AIRLINE_CMD="cd tau2-bench/tau2-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain airline --agent-llm \"$FORMATTED_MODEL_NAME\" --user-llm \"$FORMATTED_MODEL_NAME\" --max-concurrency 3"
 
-TAU2_MOCK_CMD="cd tau2-bench && source venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain mock --agent-llm \"$FORMATTED_MODEL_NAME\" --user-llm \"$FORMATTED_MODEL_NAME\" --max-concurrency 3"
+TAU2_MOCK_CMD="cd tau2-bench/tau2-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain mock --agent-llm \"$FORMATTED_MODEL_NAME\" --user-llm \"$FORMATTED_MODEL_NAME\" --max-concurrency 3"
 
-TAU2_TELECOM_CMD="cd tau2-bench && source venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain telecom --agent-llm \"$FORMATTED_MODEL_NAME\" --user-llm \"$FORMATTED_MODEL_NAME\" --max-concurrency 3"
+TAU2_TELECOM_CMD="cd tau2-bench/tau2-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain telecom --agent-llm \"$FORMATTED_MODEL_NAME\" --user-llm \"$FORMATTED_MODEL_NAME\" --max-concurrency 3"
 
 # Send Tau2 commands
 send_command "benchmarks" "2" "0" "$TAU2_RETAIL_CMD"
