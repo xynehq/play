@@ -88,10 +88,42 @@ if [ "$YAML_PARSER" = "yq" ]; then
     API_BASE=$(yq '.api_base' model_config.yaml 2>/dev/null || echo "")
     MODEL_NAME=$(yq '.model_name' model_config.yaml 2>/dev/null || echo "")
     API_KEY=$(yq '.api_key' model_config.yaml 2>/dev/null || echo "")
+    
+    # Parse Tau configuration
+    TAU_AGENT_MODEL=$(yq '.tau_config.agent_model' model_config.yaml 2>/dev/null || echo "")
+    TAU_USER_MODEL=$(yq '.tau_config.user_model' model_config.yaml 2>/dev/null || echo "")
+    TAU_AGENT_STRATEGY=$(yq '.tau_config.agent_strategy' model_config.yaml 2>/dev/null || echo "tool-calling")
+    TAU_MAX_CONCURRENCY=$(yq '.tau_config.max_concurrency' model_config.yaml 2>/dev/null || echo "3")
+    TAU_MODEL_PROVIDER=$(yq '.tau_config.model_provider' model_config.yaml 2>/dev/null || echo "openai")
+    TAU_USER_MODEL_PROVIDER=$(yq '.tau_config.user_model_provider' model_config.yaml 2>/dev/null || echo "openai")
+    
+    # Parse Tau2 configuration
+    TAU2_AGENT_LLM=$(yq '.tau2_config.agent_llm' model_config.yaml 2>/dev/null || echo "")
+    TAU2_USER_LLM=$(yq '.tau2_config.user_llm' model_config.yaml 2>/dev/null || echo "")
+    TAU2_AGENT_STRATEGY=$(yq '.tau2_config.agent_strategy' model_config.yaml 2>/dev/null || echo "tool-calling")
+    TAU2_MAX_CONCURRENCY=$(yq '.tau2_config.max_concurrency' model_config.yaml 2>/dev/null || echo "3")
+    TAU2_MODEL_PROVIDER=$(yq '.tau2_config.model_provider' model_config.yaml 2>/dev/null || echo "openai")
+    TAU2_USER_MODEL_PROVIDER=$(yq '.tau2_config.user_model_provider' model_config.yaml 2>/dev/null || echo "openai")
 else
     API_BASE=$(parse_yaml 'api_base')
     MODEL_NAME=$(parse_yaml 'model_name')
     API_KEY=$(parse_yaml 'api_key')
+    
+    # Parse Tau configuration
+    TAU_AGENT_MODEL=$(parse_yaml 'tau_config.agent_model')
+    TAU_USER_MODEL=$(parse_yaml 'tau_config.user_model')
+    TAU_AGENT_STRATEGY=$(parse_yaml 'tau_config.agent_strategy')
+    TAU_MAX_CONCURRENCY=$(parse_yaml 'tau_config.max_concurrency')
+    TAU_MODEL_PROVIDER=$(parse_yaml 'tau_config.model_provider')
+    TAU_USER_MODEL_PROVIDER=$(parse_yaml 'tau_config.user_model_provider')
+    
+    # Parse Tau2 configuration
+    TAU2_AGENT_LLM=$(parse_yaml 'tau2_config.agent_llm')
+    TAU2_USER_LLM=$(parse_yaml 'tau2_config.user_llm')
+    TAU2_AGENT_STRATEGY=$(parse_yaml 'tau2_config.agent_strategy')
+    TAU2_MAX_CONCURRENCY=$(parse_yaml 'tau2_config.max_concurrency')
+    TAU2_MODEL_PROVIDER=$(parse_yaml 'tau2_config.model_provider')
+    TAU2_USER_MODEL_PROVIDER=$(parse_yaml 'tau2_config.user_model_provider')
 fi
 
 # Validate configuration
@@ -101,16 +133,62 @@ if [ -z "$API_BASE" ] || [ -z "$MODEL_NAME" ] || [ -z "$API_KEY" ]; then
     exit 1
 fi
 
+# Validate Tau configuration
+if [ -z "$TAU_AGENT_MODEL" ] || [ -z "$TAU_USER_MODEL" ]; then
+    print_warning "Tau configuration not found in model_config.yaml, using default model_name"
+    TAU_AGENT_MODEL="$MODEL_NAME"
+    TAU_USER_MODEL="$MODEL_NAME"
+fi
+
+# Validate Tau2 configuration
+if [ -z "$TAU2_AGENT_LLM" ] || [ -z "$TAU2_USER_LLM" ]; then
+    print_warning "Tau2 configuration not found in model_config.yaml, using default model_name"
+    TAU2_AGENT_LLM="$MODEL_NAME"
+    TAU2_USER_LLM="$MODEL_NAME"
+fi
+
 print_success "Configuration loaded successfully"
 print_status "API Base: $API_BASE"
 print_status "Model Name: $MODEL_NAME"
 print_status "API Key: ${API_KEY:0:10}..." # Show only first 10 chars for security
+print_status "Tau Agent Model: $TAU_AGENT_MODEL"
+print_status "Tau User Model: $TAU_USER_MODEL"
+print_status "Tau Agent Strategy: $TAU_AGENT_STRATEGY"
+print_status "Tau Max Concurrency: $TAU_MAX_CONCURRENCY"
+print_status "Tau2 Agent LLM: $TAU2_AGENT_LLM"
+print_status "Tau2 User LLM: $TAU2_USER_LLM"
+print_status "Tau2 Agent Strategy: $TAU2_AGENT_STRATEGY"
+print_status "Tau2 Max Concurrency: $TAU2_MAX_CONCURRENCY"
 
-# Format model name for commands (add openai/ prefix if not present)
+# Format model names for commands (add openai/ prefix if not present)
 if [[ ! "$MODEL_NAME" =~ ^openai/ ]]; then
     FORMATTED_MODEL_NAME="openai/$MODEL_NAME"
 else
     FORMATTED_MODEL_NAME="$MODEL_NAME"
+fi
+
+if [[ ! "$TAU_AGENT_MODEL" =~ ^openai/ ]]; then
+    FORMATTED_TAU_AGENT_MODEL="openai/$TAU_AGENT_MODEL"
+else
+    FORMATTED_TAU_AGENT_MODEL="$TAU_AGENT_MODEL"
+fi
+
+if [[ ! "$TAU_USER_MODEL" =~ ^openai/ ]]; then
+    FORMATTED_TAU_USER_MODEL="openai/$TAU_USER_MODEL"
+else
+    FORMATTED_TAU_USER_MODEL="$TAU_USER_MODEL"
+fi
+
+if [[ ! "$TAU2_AGENT_LLM" =~ ^openai/ ]]; then
+    FORMATTED_TAU2_AGENT_LLM="openai/$TAU2_AGENT_LLM"
+else
+    FORMATTED_TAU2_AGENT_LLM="$TAU2_AGENT_LLM"
+fi
+
+if [[ ! "$TAU2_USER_LLM" =~ ^openai/ ]]; then
+    FORMATTED_TAU2_USER_LLM="openai/$TAU2_USER_LLM"
+else
+    FORMATTED_TAU2_USER_LLM="$TAU2_USER_LLM"
 fi
 
 # Setup OpenHands workspace before running benchmarks
@@ -242,9 +320,9 @@ tmux new-window -t benchmarks:1 -n "Tau"
 tmux split-window -h
 
 # Tau commands
-TAU_AIRLINE_CMD="cd tau-bench/tau-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" python3 run.py --env airline --model \"$FORMATTED_MODEL_NAME\" --model-provider openai --user-model \"$FORMATTED_MODEL_NAME\" --user-model-provider openai --agent-strategy tool-calling --max-concurrency 3"
+TAU_AIRLINE_CMD="cd tau-bench/tau-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" python3 run.py --env airline --model \"$FORMATTED_TAU_AGENT_MODEL\" --model-provider \"$TAU_MODEL_PROVIDER\" --user-model \"$FORMATTED_TAU_USER_MODEL\" --user-model-provider \"$TAU_USER_MODEL_PROVIDER\" --agent-strategy \"$TAU_AGENT_STRATEGY\" --max-concurrency $TAU_MAX_CONCURRENCY"
 
-TAU_RETAIL_CMD="cd tau-bench/tau-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" python3 run.py --env retail --model \"$FORMATTED_MODEL_NAME\" --model-provider openai --user-model \"$FORMATTED_MODEL_NAME\" --user-model-provider openai --agent-strategy tool-calling --max-concurrency 3"
+TAU_RETAIL_CMD="cd tau-bench/tau-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" python3 run.py --env retail --model \"$FORMATTED_TAU_AGENT_MODEL\" --model-provider \"$TAU_MODEL_PROVIDER\" --user-model \"$FORMATTED_TAU_USER_MODEL\" --user-model-provider \"$TAU_USER_MODEL_PROVIDER\" --agent-strategy \"$TAU_AGENT_STRATEGY\" --max-concurrency $TAU_MAX_CONCURRENCY"
 
 # Send Tau commands
 send_command "benchmarks" "1" "0" "$TAU_AIRLINE_CMD"
@@ -263,13 +341,13 @@ tmux select-pane -t benchmarks:2.0
 tmux split-window -v
 
 # Tau2 commands
-TAU2_RETAIL_CMD="cd tau2-bench/tau2-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain retail --agent-llm \"$FORMATTED_MODEL_NAME\" --user-llm \"$FORMATTED_MODEL_NAME\" --max-concurrency 3"
+TAU2_RETAIL_CMD="cd tau2-bench/tau2-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain retail --agent-llm \"$FORMATTED_TAU2_AGENT_LLM\" --user-llm \"$FORMATTED_TAU2_USER_LLM\" --max-concurrency $TAU2_MAX_CONCURRENCY"
 
-TAU2_AIRLINE_CMD="cd tau2-bench/tau2-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain airline --agent-llm \"$FORMATTED_MODEL_NAME\" --user-llm \"$FORMATTED_MODEL_NAME\" --max-concurrency 3"
+TAU2_AIRLINE_CMD="cd tau2-bench/tau2-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain airline --agent-llm \"$FORMATTED_TAU2_AGENT_LLM\" --user-llm \"$FORMATTED_TAU2_USER_LLM\" --max-concurrency $TAU2_MAX_CONCURRENCY"
 
-TAU2_MOCK_CMD="cd tau2-bench/tau2-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain mock --agent-llm \"$FORMATTED_MODEL_NAME\" --user-llm \"$FORMATTED_MODEL_NAME\" --max-concurrency 3"
+TAU2_MOCK_CMD="cd tau2-bench/tau2-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain mock --agent-llm \"$FORMATTED_TAU2_AGENT_LLM\" --user-llm \"$FORMATTED_TAU2_USER_LLM\" --max-concurrency $TAU2_MAX_CONCURRENCY"
 
-TAU2_TELECOM_CMD="cd tau2-bench/tau2-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain telecom --agent-llm \"$FORMATTED_MODEL_NAME\" --user-llm \"$FORMATTED_MODEL_NAME\" --max-concurrency 3"
+TAU2_TELECOM_CMD="cd tau2-bench/tau2-bench-repo && source .venv/bin/activate && OPENAI_API_BASE=\"$API_BASE\" OPENAI_API_KEY=\"$API_KEY\" tau2 run --domain telecom --agent-llm \"$FORMATTED_TAU2_AGENT_LLM\" --user-llm \"$FORMATTED_TAU2_USER_LLM\" --max-concurrency $TAU2_MAX_CONCURRENCY"
 
 # Send Tau2 commands
 send_command "benchmarks" "2" "0" "$TAU2_RETAIL_CMD"
