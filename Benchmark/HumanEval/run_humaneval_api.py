@@ -18,20 +18,29 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import subprocess
 import tempfile
 import numpy as np
-
+import yaml
 import requests
 from tqdm import tqdm
 
 # Rust evaluation support is now built-in
 RUST_SUPPORT = True
 
-# API Configuration
-API_KEY = 'sk-67cI50BNxSw7SsYSkQGvGw'
-BASE_URL = 'https://grid.ai.juspay.net'
+API_KEY = ""
+BASE_URL = ""
 
 # Model Configuration  
-BASE_MODEL = "kat-dev-base-72b"
-FINE_TUNED_MODEL = "kat-dev-hs-72b"
+BASE_MODEL = ""
+FINE_TUNED_MODEL = ""
+
+# API Configuration
+config_path = Path(Path(__file__).parent.parent / "model_config.yaml")
+config_file = Path(config_path)
+with open(config_file, 'r') as f:
+    yaml_data=yaml.safe_load(f)
+    API_KEY= yaml_data.get("api_key", "")
+    BASE_URL= yaml_data.get("api_base", "")
+    BASE_MODEL = yaml_data.get("humaneval_config", {}).get("base_model", "")
+    FINE_TUNED_MODEL = yaml_data.get("humaneval_config", {}).get("fine_tuned_model", "")
 
 
 # ============================================================================
@@ -287,10 +296,10 @@ def call_api(prompt, model, max_tokens=512, temperature=0.2, n=1, timeout=60):
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
     }
-    
+    message = [{"role": "user", "content": prompt}]
     payload = {
         "model": model,
-        "prompt": prompt,
+        "messages": message,
         "max_tokens": max_tokens,
         "temperature": temperature,
         "n": n,
@@ -299,7 +308,7 @@ def call_api(prompt, model, max_tokens=512, temperature=0.2, n=1, timeout=60):
     
     try:
         response = requests.post(
-            f"{BASE_URL}/v1/completions",
+            f"{BASE_URL}/v1/chat/completions",
             headers=headers,
             json=payload,
             timeout=timeout
@@ -307,7 +316,7 @@ def call_api(prompt, model, max_tokens=512, temperature=0.2, n=1, timeout=60):
         response.raise_for_status()
         
         result = response.json()
-        completions = [choice["text"] for choice in result["choices"]]
+        completions = [choice["message"]["content"] for choice in result["choices"]]
         return completions
         
     except requests.exceptions.Timeout:
@@ -446,11 +455,21 @@ def run_eval_api(model_name, output_file="samples.jsonl", k=[1, 10], num_samples
 
 def main():
     """Main function to run HumanEval benchmark via API."""
-    
+    config_path = Path(Path(__file__).parent.parent / "model_config.yaml")
+    config_file = Path(config_path)
+    with open(config_file, 'r') as f:
+        humaneval_config=yaml.safe_load(f).get("humaneval_config", {})
+        lang_choice = humaneval_config.get("lang_choice", "rust")
+        COMPARE_MODELS = humaneval_config.get("compare_models", True)
+        temp=humaneval_config.get("temperature", 0.2)
+        n_samp=humaneval_config.get("num_samples", 10)
+        max_n_tokens=humaneval_config.get("max_new_tokens", 512)
+        k_values=humaneval_config.get("k_values", [1, 10])
+
+
     # Benchmark configuration
-    LANGUAGE = "rust"  # Set to "rust" for Rust benchmarking, "python" for Python
-    RUST_PROBLEMS_FILE = "data/humaneval-rust.jsonl.gz"
-    COMPARE_MODELS = True  # Set to False to only evaluate fine-tuned model
+    RUST_PROBLEMS_FILE = "Dataset/humaneval-rust.jsonl.gz"
+    LANGUAGE = "rust" if lang_choice == 1 else "python"
     
     print("="*70)
     print("HumanEval Benchmark Evaluation - API Version")
@@ -487,10 +506,10 @@ def main():
     fine_tuned_results = run_eval_api(
         model_name=FINE_TUNED_MODEL,
         output_file=f"result/{FINE_TUNED_MODEL}_{output_suffix}.jsonl",
-        num_samples=10,
-        max_new_tokens=512,
-        temperature=0.2,
-        k=[1, 10],
+        num_samples=n_samp,
+        max_new_tokens=max_n_tokens,
+        temperature=temp,
+        k=k_values,
         language=LANGUAGE,
         problem_file=problem_file
     )
@@ -505,10 +524,10 @@ def main():
         base_results = run_eval_api(
             model_name=BASE_MODEL,
             output_file=f"result/{BASE_MODEL}_{output_suffix}.jsonl",
-            num_samples=10,
-            max_new_tokens=512,
-            temperature=0.2,
-            k=[1, 10],
+            num_samples=n_samp,
+            max_new_tokens=max_n_tokens,
+            temperature=temp,
+            k=k_values,
             language=LANGUAGE,
             problem_file=problem_file
         )

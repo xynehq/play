@@ -21,7 +21,7 @@ import venv
 from pathlib import Path
 import json
 import shutil
-
+import yaml
 # -----------------------------------------------------------------------------
 # Helper functions
 # -----------------------------------------------------------------------------
@@ -108,6 +108,7 @@ packages = [
     "tqdm",
     "python-dotenv",
     "fire",
+    "pyyaml",
 ]
 
 run([str(pip_path), "install"] + packages)
@@ -133,7 +134,7 @@ else:
 print("\nℹ️  Benchmark script will run from parent directory (has Rust support)")
 
 # Ensure data directory exists
-data_dir = Path("data")
+data_dir = Path("Dataset")
 data_dir.mkdir(exist_ok=True)
 
 # Copy Rust dataset from cloned repo to parent directory
@@ -167,24 +168,35 @@ print("="*70)
 
 env_file = Path(".env")
 
+config_path = Path(Path(__file__).parent.parent / "model_config.yaml")
+config_file = Path(config_path)
+ap_k = ""
+b_url = ""
+humaneval_config = {}
+with open(config_file, 'r') as f:
+    yaml_data=yaml.safe_load(f)
+    ap_k=yaml_data.get("api_key")
+    b_url=yaml_data.get("api_base")
+    humaneval_config = yaml_data.get("humaneval_config", {})
+
 if env_file.exists():
     print(f"\n⚠️  .env file already exists!")
-    overwrite = input("Do you want to OVERWRITE? (y/n, default: n): ").strip().lower()
+    overwrite = humaneval_config.get("overwrite_env", "n")
     if overwrite != "y":
         print("✅ Keeping existing .env file")
         configure_api = "n"
     else:
         configure_api = "y"
 else:
-    configure_api = input("\nConfigure API settings now? (y/n, default: y): ").strip().lower() or "y"
+    configure_api = humaneval_config.get("configure_api", "y")
 
 if configure_api == "y":
-    print("\n⚙️  Enter your API configuration:")
+    print("\n⚙️  API configuration:")
     
-    api_key = input("API Key: ").strip()
-    base_url = input("Base URL (e.g., https://grid.ai.juspay.net): ").strip()
-    fine_tuned_model = input("Fine-tuned Model Name: ").strip()
-    base_model = input("Base Model Name (for comparison, or press Enter to skip): ").strip()
+    api_key = ap_k
+    base_url = b_url
+    fine_tuned_model = humaneval_config.get("fine_tuned_model","").strip()
+    base_model = humaneval_config.get("base_model","").strip()
     
     with open(env_file, 'w') as f:
         f.write("# HumanEval API Configuration\n\n")
@@ -206,9 +218,9 @@ print("1. Rust (requires Cargo and humaneval-rust.jsonl.gz dataset)")
 print("2. Python (standard HumanEval)")
 print("="*70)
 
-lang_choice = input("Enter choice (1/2, default: 1): ").strip() or "1"
+lang_choice = humaneval_config.get("lang_choice",1)
 
-if lang_choice == "1":
+if lang_choice == 1:
     language = "rust"
     print("✅ Selected: Rust benchmark")
     
@@ -243,67 +255,13 @@ else:
     language = "python"
     print("✅ Selected: Python benchmark")
 
-# -----------------------------------------------------------------------------
-# Step 7: Run benchmark
-# -----------------------------------------------------------------------------
-print("\n" + "="*70)
-print("=== Running HumanEval Benchmark ===")
-print("="*70)
 
-# Update run_humaneval_api.py with language setting
-api_script = repo_dir / "run_humaneval_api.py"
-
-if api_script.exists():
-    print(f"\n🔧 Configuring benchmark for {language.upper()}...")
-    
-    with open(api_script, 'r') as f:
-        content = f.read()
-    
-    # Update LANGUAGE setting
-    content = content.replace(
-        'LANGUAGE = "rust"',
-        f'LANGUAGE = "{language}"'
-    )
-    
-    with open(api_script, 'w') as f:
-        f.write(content)
-    
-    print(f"✅ Configured for {language.upper()} benchmarking")
-
-# Run the benchmark from parent directory (has Rust support)
-print(f"\n🚀 Starting benchmark...")
-print(f"⏱️  This may take several minutes...")
-print("="*70 + "\n")
-
-# Check if run_humaneval_api.py exists in parent directory
-parent_script = Path("run_humaneval_api.py")
-if not parent_script.exists():
-    print("❌ run_humaneval_api.py not found in current directory")
-    print("ℹ️  Please ensure run_humaneval_api.py is in the same directory as this script")
-    sys.exit(1)
-
-try:
-    # Run from parent directory (current directory)
-    # Use absolute path to venv python
-    venv_python_path = str(Path.cwd() / venv_dir / "bin" / "python")
-    print(f"🔹 Using Python: {venv_python_path}")
-    run([venv_python_path, "run_humaneval_api.py"])
-    print(f"\n✅ Benchmark completed successfully!")
-except subprocess.CalledProcessError as e:
-    print(f"\n❌ Benchmark failed: {e}")
-    sys.exit(1)
 
 # -----------------------------------------------------------------------------
 # Summary
 # -----------------------------------------------------------------------------
 print("\n" + "="*70)
-print("✅ HumanEval Setup and Benchmark Complete!")
-print("="*70)
-print(f"\n📊 Results saved in: {repo_dir / 'result'}/")
-print(f"📝 Logs available in: {repo_dir / 'result' / 'logs'}/")
-print("\n🔍 View results:")
-print(f"   ls -la {repo_dir / 'result'}/")
-print("\n💡 To run again:")
-print(f"   cd {repo_dir}")
+print("✅ HumanEval Setup Complete!")
+print("\n💡 To run the Benchmark:")
 print(f"   python3 run_humaneval_api.py")
 print("="*70)

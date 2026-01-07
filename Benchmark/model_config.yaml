@@ -2,10 +2,10 @@
 # This file contains model details for benchmark testing
 
 # API Configuration
-api_base: "https:"  # e.g., "https://api.yourmodel.com/v1"
+api_base: ""  # e.g., "https://api.yourmodel.com/v1"
 
 # API Authentication (optional)
-api_key: ""  # Leave blank if not required
+api_key: "sk-"  # Leave blank if not required
 model_name: "glm-"  # Default model name
 
 # Benchmark Settings
@@ -55,3 +55,79 @@ rust_evo_config:
       # 6. Exit
   workers_rq1: 1     # For RustEvo setup
   workers_rq3: 1     # For RustEvo setup
+
+#Config for Tau Benchmark
+tau_config:
+  agent_model: "glm-"  # Model to use for the agent
+  user_model: "glm-"   # Model to use for the user simulator
+  agent_strategy: "tool-calling"  # Options: tool-calling, chat-react, few-shot
+  max_concurrency: 3  # Maximum number of concurrent tasks
+  model_provider: "openai"  # Model provider (openai, anthropic, etc.)
+  user_model_provider: "openai"  # User model provider
+
+#Config for Tau2 Benchmark
+tau2_config:
+  agent_llm: "glm-"  # Model to use for the agent
+  user_llm: "glm-"   # Model to use for the user simulator
+  agent_strategy: "tool-calling"  # Options: tool-calling, chat-react, few-shot
+  max_concurrency: 3  # Maximum number of concurrent tasks
+  model_provider: "openai"  # Model provider (openai, anthropic, etc.)
+  user_model_provider: "openai"  # User model provider
+
+#Config for Hyperswitch Benchmark
+hyperswitch_config:
+  # API Configuration
+  api:
+    base_url: "https://grid.ai.juspay.net/v1/messages"  # API endpoint
+    api_key: ""  # API authentication key
+  
+  # Model Configuration
+  models:
+    model_1: "glm-"  # First model name for inference
+    model_2: "glm-"  # Second model name for inference
+    evaluation_model: "glm-"  # Model to use for evaluation
+  
+  # Generation Parameters
+  generation:
+    temperature: 0.6  # Sampling temperature for generation
+    top_p: 0.95  # Nucleus sampling parameter
+    top_k: 20  # Top-k sampling parameter (null if not supported)
+    max_tokens: 10000  # Maximum tokens for generation
+    num_outputs: 3  # Number of outputs per data point
+  
+  # Evaluation Parameters
+  evaluation:
+    temperature: 0.0  # Temperature for evaluation (0 for consistency)
+    max_tokens: 1600  # Maximum tokens for evaluation
+    top_k: null  # Top-k for evaluation
+    top_p: null  # Top-p for evaluation
+  
+  # Concurrency Configuration
+  concurrency:
+    max_concurrent_items: 5  # Number of items to process in parallel
+  
+  # Processing Configuration
+  processing:
+    max_workers: 1  # Number of parallel workers for evaluation
+    enable_parallel: false  # Enable parallel processing
+  
+  # File Paths (relative to hyperswitch-benchmark directory)
+  paths:
+    input_file: "data/input.json"  # Input data file
+    output_dir: "model_output"  # Output directory for model outputs
+    results_dir: "model_results"  # Results directory
+    logs_dir: "logs"  # Logs directory
+
+#Config for HumanEval Benchmark
+humaneval_config:
+  fine_tuned_model: "glm-latest"  # Model to use for HumanEval benchmark
+  base_model: "glm-private"
+  overwrite_env: "n"  # Overwrite existing .env file (y/n)
+  configure_api: "y"  # Configure API settings now (y/n)
+  lang_choice: 1 # 1. Rust 2. Python
+  compare_models: False  # Compare base and fine-tuned models (true/false)
+  temperature: 0.2  # Sampling temperature
+  num_samples: 10    # Number of samples to generate per problem
+  max_new_tokens: 512  # Maximum new tokens to generate per sample
+  k_values: [1, 10]  # List of k values for evaluation
+  

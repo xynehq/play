@@ -349,6 +349,19 @@ send_command "benchmarks" "7" "0" "$SWE_BENCH_CMD"
 # Set pane title for SWE-Bench
 tmux select-pane -t benchmarks:7.0 -T "SWE-Bench"
 
+# Create HumanEval-Bench window with single pane
+print_status "Setting up HumanEval-Bench window..."
+tmux new-window -t benchmarks:8 -n "HumanEval-Bench"
+
+# HumanEval-Bench command
+HUMAN_EVAL_BENCH_CMD="cd HumanEval && python3 setup_humaneval.py && source ./venv_humaneval/bin/activate &&  python3 run_humaneval_api.py"
+
+# Send HumanEval-Bench command
+send_command "benchmarks" "8" "0" "$HUMAN_EVAL_BENCH_CMD"
+
+# Set pane title for HumanEval-Bench
+tmux select-pane -t benchmarks:8.0 -T "HumanEval-Bench"
+
 
 # Select first window and attach to session
 tmux select-window -t benchmarks:1
@@ -364,11 +377,12 @@ print_status "  4. Hyperswitch (1 pane: inference)"
 print_status "  5. Archit-Eval (1 pane: archit-eval)"
 print_status "  6. RustEvo (1 pane: rust-evo)"
 print_status "  7. SWE-Bench (1 pane: swe-bench)"
+print_status "  8. HumanEval-Bench (1 pane: humaneval-bench)"
 print_status ""
 print_status "Use Ctrl+B then:"
 print_status "  - n: next window"
 print_status "  - p: previous window"
-print_status "  - 1/2/3/4/5/6/7: go to window 1/2/3/4/5/6/7"
+print_status "  - 1/2/3/4/5/6/7/8: go to window 1/2/3/4/5/6/7/8"
 print_status "  - o: switch panes"
 print_status "  - d: detach session"
 print_status ""
